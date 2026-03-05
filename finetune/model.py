@@ -15,14 +15,6 @@ BiRefNet Fine-tuning 모델 래퍼 (어댑터 버전).
 모든 어댑터는 초기 출력이 0으로 설정되어, 적용 직후 원본과 동일하게 동작한다.
 """
 
-import os
-import sys
-
-# BiRefNet 내부 모듈이 import 되도록 경로 추가
-_birefnet_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'BiRefNet')
-if _birefnet_dir not in sys.path:
-    sys.path.insert(0, _birefnet_dir)
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

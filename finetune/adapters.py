@@ -133,17 +133,46 @@ def apply_adapters_to_decoder(decoder: nn.Module, reduction: int = 4) -> int:
             setattr(decoder, block_name, AdapterConv(original_block, out_ch, reduction))
             count += 1
 
-    # 최종 출력 conv 어댑터 (1채널 출력이라 직접 어댑터 대신, 직전 특징에 어댑터를 넣는 것이 더 효과적)
-    # conv_out1은 nn.Sequential(Conv2d(in, 1, 1)) 이므로, 입력 채널에 어댑터를 넣음
+    # 최종 출력 conv 어댑터
+    # conv_out1은 Conv2d(in, 1) → 출력이 1채널이므로 AdapterConv로 감싸면 안 됨
+    # 대신 입력 특징에 어댑터를 적용한 후 원본 conv_out1에 통과시킴
     if hasattr(decoder, 'conv_out1'):
         conv_out = decoder.conv_out1
-        # conv_out1 내부의 Conv2d 입력 채널 가져오기
         for m in conv_out.modules():
             if isinstance(m, nn.Conv2d):
                 in_ch = m.in_channels
                 break
-        # conv_out1 직전에 동작하는 어댑터를 삽입
-        decoder.conv_out1 = AdapterConv(conv_out, in_ch, reduction)
+        decoder.conv_out1 = AdapterBeforeConv(conv_out, in_ch, reduction)
         count += 1
 
     return count
+
+
+class AdapterBeforeConv(nn.Module):
+    """
+    입력 특징에 잔차 어댑터를 적용한 후 원본 conv에 통과시킨다.
+    output = original(x + adapter(x))
+
+    conv_out1처럼 출력 채널이 입력과 다른 경우에 사용.
+    """
+
+    def __init__(self, original: nn.Module, channels: int, reduction: int = 4):
+        super().__init__()
+        self.original = original
+        mid = max(channels // reduction, 16)
+
+        self.adapter = nn.Sequential(
+            nn.Conv2d(channels, mid, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid, channels, 1, bias=False),
+        )
+        nn.init.zeros_(self.adapter[-1].weight)
+
+        for p in self.original.parameters():
+            p.requires_grad = False
+
+    def forward(self, *args, **kwargs):
+        x = args[0]
+        adapted_x = x + self.adapter(x)
+        return self.original(adapted_x)
+
