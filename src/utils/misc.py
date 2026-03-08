@@ -12,10 +12,7 @@ class ConfigDict(dict):
             if isinstance(value, dict):
                 self[key] = ConfigDict(value)
 
-    def __getattr__(
-        self,
-        name: str
-    ) -> Any:
+    def __getattr__(self, name: str) -> Any:
         try:
             return self[name]
         except KeyError:

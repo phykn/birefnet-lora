@@ -34,10 +34,7 @@ class LoRALinear(nn.Module):
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
         nn.init.zeros_(self.up.weight)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x) + self.up(self.down(x)) * self.scale
 
 
@@ -78,10 +75,7 @@ class LoRAConv2d(nn.Module):
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
         nn.init.zeros_(self.up.weight)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x) + self.up(self.down(x)) * self.scale
 
 
@@ -98,32 +92,26 @@ def apply_linear(
                 setattr(
                     m,
                     child_name,
-                    LoRALinear(
-                        linear = child_module,
-                        rank = rank,
-                        alpha = alpha
-                    )
+                    LoRALinear(linear=child_module, rank=rank, alpha=alpha)
                 )
 
 
 def apply_conv2d(
     model: nn.Module,
     rank: int = 8,
-    alpha: float = 16.0
+    alpha: float = 16.0,
+    exclude_names: list[str] | None = None,
 ) -> None:
+    excludes = exclude_names or []
     for _, m in model.named_modules():
         if isinstance(m, (LoRALinear, LoRAConv2d)):
             continue
         for child_name, child_module in m.named_children():
             if isinstance(child_module, nn.Conv2d):
-                if "regular_conv" in child_name:
+                if any(name in child_name for name in excludes):
                     continue
                 setattr(
                     m,
                     child_name,
-                    LoRAConv2d(
-                        conv = child_module,
-                        rank = rank,
-                        alpha = alpha
-                    )
+                    LoRAConv2d(conv=child_module, rank=rank, alpha=alpha)
                 )

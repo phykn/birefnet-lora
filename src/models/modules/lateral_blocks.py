@@ -20,8 +20,5 @@ class BasicLatBlk(nn.Module):
             padding = p
         )
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)

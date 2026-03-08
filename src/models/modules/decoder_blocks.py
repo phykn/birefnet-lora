@@ -33,10 +33,7 @@ class BasicDecBlk(nn.Module):
         self.bn_in = nn.BatchNorm2d(inter_channels)
         self.bn_out = nn.BatchNorm2d(out_channels)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv_in(x)
         x = self.bn_in(x)
         x = self.relu_in(x)

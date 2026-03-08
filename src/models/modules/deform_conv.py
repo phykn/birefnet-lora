@@ -28,7 +28,7 @@ class DeformableConv2d(nn.Module):
             kernel_size = k_size,
             stride = stride,
             padding = self.padding,
-            bias = True
+            bias = True,
         )
 
         nn.init.constant_(self.offset_conv.weight, 0.0)
@@ -40,7 +40,7 @@ class DeformableConv2d(nn.Module):
             kernel_size = k_size,
             stride = stride,
             padding = self.padding,
-            bias = True
+            bias = True,
         )
 
         nn.init.constant_(self.modulator_conv.weight, 0.0)
@@ -52,13 +52,10 @@ class DeformableConv2d(nn.Module):
             kernel_size = k_size,
             stride = stride,
             padding = self.padding,
-            bias = bias
+            bias = bias,
         )
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         offset = self.offset_conv(x)
         modulator = 2.0 * torch.sigmoid(self.modulator_conv(x))
 
@@ -69,5 +66,5 @@ class DeformableConv2d(nn.Module):
             bias = self.regular_conv.bias,
             padding = self.padding,
             mask = modulator,
-            stride = self.stride
+            stride = self.stride,
         )

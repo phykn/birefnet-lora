@@ -20,15 +20,12 @@ class _ASPPModuleDeformable(nn.Module):
             kernel_size = kernel_size,
             stride = 1,
             padding = padding,
-            bias = False
+            bias = False,
         )
         self.bn = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.atrous_conv(x)
         x = self.bn(x)        
         return self.relu(x)
@@ -47,22 +44,22 @@ class ASPPDeformable(nn.Module):
         if out_channels is None:
             out_channels = in_channels
             
-        self.in_channelster = 256 // self.down_scale
+        self.planes = 256 // self.down_scale
 
         self.aspp1 = _ASPPModuleDeformable(
             in_channels = in_channels,
-            planes = self.in_channelster,
+            planes = self.planes,
             kernel_size = 1,
-            padding = 0
+            padding = 0,
         )
         
         self.aspp_deforms = nn.ModuleList(
             [
                 _ASPPModuleDeformable(
                     in_channels = in_channels,
-                    planes = self.in_channelster,
+                    planes = self.planes,
                     kernel_size = conv_size,
-                    padding = int(conv_size // 2)
+                    padding = int(conv_size // 2),
                 )
                 for conv_size in parallel_block_sizes
             ]
@@ -72,38 +69,35 @@ class ASPPDeformable(nn.Module):
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             nn.Conv2d(
                 in_channels = in_channels,
-                out_channels = self.in_channelster,
+                out_channels = self.planes,
                 kernel_size = 1,
                 stride = 1,
-                bias = False
+                bias = False,
             ),
-            nn.BatchNorm2d(self.in_channelster),
+            nn.BatchNorm2d(self.planes),
             nn.ReLU(inplace=True)
         )
         
         self.conv1 = nn.Conv2d(
-            in_channels = self.in_channelster * (2 + len(self.aspp_deforms)),
+            in_channels = self.planes * (2 + len(self.aspp_deforms)),
             out_channels = out_channels,
             kernel_size = 1,
-            bias = False
+            bias = False,
         )
         self.bn1 = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(0.5)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.aspp1(x)
         x_aspp_deforms = [aspp_deform(x) for aspp_deform in self.aspp_deforms]
         x5 = self.global_avg_pool(x)
         
         x5 = F.interpolate(
-            input = x5,
+            x5,
             size = x1.size()[2:],
             mode = "bilinear",
-            align_corners = True
+            align_corners = True,
         )
         
         x = torch.cat((x1, *x_aspp_deforms, x5), dim=1)

@@ -1,0 +1,1 @@
+# put "BiRefNet-general-epoch_244.pth" in this directory

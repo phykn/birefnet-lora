@@ -1,7 +1,11 @@
 torch
+torchvision
 numpy
 albumentations
 Pillow
 PyYAML
 tqdm
 tensorboard
+einops
+kornia
+timm

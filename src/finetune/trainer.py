@@ -15,7 +15,8 @@ class Trainer:
         valid_loader: DataLoader,
         criterion: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        device: torch.device
+        device: torch.device,
+        use_tensorboard: bool = True,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -23,14 +24,14 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.amp.GradScaler("cuda")
 
-        
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.save_dir = os.path.join("run", now)
         os.makedirs(self.save_dir, exist_ok=True)
 
-        self.writer = SummaryWriter(log_dir=os.path.join(self.save_dir, "logs"))
+        log_dir = os.path.join(self.save_dir, "logs")
+        self.writer = SummaryWriter(log_dir=log_dir) if use_tensorboard else None
         self.train_iter = iter(self.train_loader)
 
     def train(
@@ -43,11 +44,7 @@ class Trainer:
 
         for step in pbar:
             losses = self._step()
-            pbar.set_postfix(
-                loss = f"{losses['loss']:.4f}",
-                seg = f"{losses['seg']:.4f}",
-                aux = f"{losses['aux']:.4f}"
-            )
+            pbar.set_postfix(loss=f"{losses['loss']:.4f}", seg=f"{losses['seg']:.4f}", aux=f"{losses['aux']:.4f}")
 
             if self.writer:
                 self.writer.add_scalar("Train/Loss", losses["loss"], step)
@@ -66,13 +63,12 @@ class Trainer:
         self.model.train()
         batch = self._get_batch()
         imgs = batch["image"].to(self.device)
-        masks = batch["mask"].to(device=self.device)
+        masks = batch["mask"].to(self.device)
 
         self.optimizer.zero_grad()
-        with torch.cuda.amp.autocast():
-            out = self.model(imgs)
+        with torch.amp.autocast("cuda"):
+            out, loss_aux = self.model(imgs)
             loss_seg = self.criterion(out, masks)
-            loss_aux = getattr(self.model, "aux_loss", torch.tensor(0.0).to(self.device))
             loss = loss_seg + loss_aux
 
         self.scaler.scale(loss).backward()
@@ -94,13 +90,14 @@ class Trainer:
             imgs = batch["image"].to(self.device)
             masks = batch["mask"].to(self.device)
 
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 out = self.model(imgs)
                 loss = self.criterion(out, masks)
-                
+
             total_loss += loss.item()
 
-        return total_loss / len(self.valid_loader)
+        n = len(self.valid_loader)
+        return total_loss / n if n > 0 else 0.0
 
     def _save(self) -> None:
         if hasattr(self.model, "save_adapters"):

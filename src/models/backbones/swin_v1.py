@@ -23,10 +23,7 @@ class Mlp(nn.Module):
         self.fc2 = nn.Linear(hidden_features, out_features)
         self.drop = nn.Dropout(drop)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
         x = self.act(x)
         x = self.drop(x)
@@ -220,8 +217,7 @@ class SwinTransformerBlock(nn.Module):
             drop = drop
         )
 
-        self.H = None
-        self.W = None
+
 
     def forward(
         self,
@@ -467,10 +463,7 @@ class PatchEmbed(nn.Module):
         )
         self.norm = norm_layer(embed_dim) if norm_layer is not None else None
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         _, _, h, w = x.size()
         if w % self.patch_size[1] != 0:
             x = F.pad(x, (0, self.patch_size[1] - w % self.patch_size[1]))
@@ -597,10 +590,7 @@ class SwinTransformer(nn.Module):
                 for param in m.parameters():
                     param.requires_grad = False
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> tuple[torch.Tensor, ...]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
         x = self.patch_embed(x)
 
         wh, ww = x.size(2), x.size(3)
@@ -632,18 +622,13 @@ class SwinTransformer(nn.Module):
 
         return tuple(outs)
 
-    def train(
-        self,
-        mode: bool = True
-    ) -> "SwinTransformer":
+    def train(self, mode: bool = True) -> "SwinTransformer":
         super(SwinTransformer, self).train(mode)
         self._freeze_stages()
         return self
 
 
-def swin_v1_l(
-    sdpa_enabled: bool = True
-) -> SwinTransformer:
+def swin_v1_l(sdpa_enabled: bool = True) -> SwinTransformer:
     return SwinTransformer(
         embed_dim = 192,
         depths = [2, 2, 18, 2],

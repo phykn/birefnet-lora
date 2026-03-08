@@ -19,15 +19,12 @@ class LoRABiRefNet(nn.Module):
         for p in self.model.parameters():
             p.requires_grad = False
 
-        apply_linear(
-            model = self.model.bb,
-            rank = rank,
-            alpha = alpha
-        )
+        apply_linear(model=self.model.bb, rank=rank, alpha=alpha)
         apply_conv2d(
             model = self.model.decoder,
             rank = rank,
-            alpha = alpha
+            alpha = alpha,
+            exclude_names = ["regular_conv"],
         )
 
         total = sum(p.numel() for p in self.parameters())
@@ -36,44 +33,37 @@ class LoRABiRefNet(nn.Module):
         self.stats = {
             "total": total,
             "trainable": trainable,
-            "frozen": total - trainable
+            "frozen": total - trainable,
         }
+        print(
+            f"[LoRABiRefNet] "
+            f"total={total:,}  "
+            f"trainable={trainable:,}  "
+            f"ratio={trainable / total:.2%}"
+        )
 
-        self.aux_loss = torch.tensor(0.0)
-        self.bce = nn.BCEWithLogitsLoss()
-
-    def _train_step(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def _train_step(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         scaled_preds, _ = self.model(x)
         (gdt_preds, gdt_labels), preds = scaled_preds
 
-        loss = torch.tensor(0.0, device=x.device)
+        aux_loss = torch.tensor(0.0, device=x.device)
         for pred, label in zip(gdt_preds, gdt_labels):
             pred = F.interpolate(
-                input = pred,
-                size = label.shape[2:],
-                mode = "bilinear",
-                align_corners = True
+                pred,
+                size=label.shape[2:],
+                mode="bilinear",
+                align_corners=True
             )
             label = label.sigmoid()
-            loss = loss + self.bce(pred, label)
+            aux_loss = aux_loss + F.binary_cross_entropy_with_logits(pred, label)
 
-        self.aux_loss = loss
-        return preds[-1]
+        return preds[-1], aux_loss
 
-    def _eval_step(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def _eval_step(self, x: torch.Tensor) -> torch.Tensor:
         preds = self.model(x)
         return preds[-1]
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         if self.training:
             return self._train_step(x)
         return self._eval_step(x)
@@ -81,23 +71,13 @@ class LoRABiRefNet(nn.Module):
     def get_adapter_params(self) -> list[nn.Parameter]:
         return [p for p in self.parameters() if p.requires_grad]
 
-    def save_adapters(
-        self,
-        path: str
-    ) -> None:
+    def save_adapters(self, path: str) -> None:
         state = {
             k: v for k, v in self.state_dict().items()
             if "down" in k or "up" in k
         }
         torch.save(state, path)
 
-    def load_adapters(
-        self,
-        path: str
-    ) -> None:
-        state = torch.load(
-            path,
-            map_location = "cpu",
-            weights_only = True
-        )
+    def load_adapters(self, path: str) -> None:
+        state = torch.load(path, map_location="cpu", weights_only=True)
         self.load_state_dict(state, strict=False)

@@ -1,35 +1,7 @@
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# PyTorch
-*.pth
-*.pt
-*.ckpt
-
-# Output
-run/
-logs/
-checkpoints/
-
-# Data
-data/
-weight/
-
-# Specific project files not to commit
-BiRefNet/
-
-# Editor
-.vscode/
-.idea/
-.DS_Store
+*.egg-info/
+dist/
+build/

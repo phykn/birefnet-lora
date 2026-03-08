@@ -35,10 +35,10 @@ class SegmentationLoss(nn.Module):
     ) -> torch.Tensor:
         if pred.shape[2:] != target.shape[2:]:
             pred = F.interpolate(
-                input = pred,
-                size = target.shape[2:],
-                mode = "bilinear",
-                align_corners = True
+                pred,
+                size=target.shape[2:],
+                mode="bilinear",
+                align_corners=True
             )
 
         target = torch.clamp(target, 0, 1)
