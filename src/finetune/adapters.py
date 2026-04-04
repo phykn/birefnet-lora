@@ -40,20 +40,27 @@ class LoRAConv2d(nn.Module):
         for param in self.conv.parameters():
             param.requires_grad = False
 
+        if conv.groups != 1:
+            raise ValueError("LoRAConv2d currently supports grouped conv only when groups=1.")
+
         self.down = nn.Conv2d(
             in_channels=conv.in_channels,
             out_channels=rank,
-            kernel_size=conv.kernel_size,
-            stride=conv.stride,
-            padding=conv.padding,
-            dilation=conv.dilation,
-            groups=conv.groups,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            dilation=1,
+            groups=1,
             bias=False,
         )
         self.up = nn.Conv2d(
             in_channels=rank,
             out_channels=conv.out_channels,
-            kernel_size=1,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            dilation=conv.dilation,
+            groups=1,
             bias=False,
         )
 

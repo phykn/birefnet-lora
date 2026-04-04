@@ -2,9 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .adapters import apply_conv2d, apply_linear
-
-ADAPTER_STATE_KEY_TOKENS = ("down", "up")
+from .adapters import LoRAConv2d, LoRALinear, apply_conv2d, apply_linear
 
 
 class LoRABiRefNet(nn.Module):
@@ -64,14 +62,47 @@ class LoRABiRefNet(nn.Module):
     def get_adapter_params(self) -> list[nn.Parameter]:
         return [param for param in self.parameters() if param.requires_grad]
 
+    def _adapter_state_keys(self) -> set[str]:
+        keys: set[str] = set()
+        for module_name, module in self.named_modules():
+            if not isinstance(module, (LoRALinear, LoRAConv2d)):
+                continue
+            prefix = f"{module_name}." if module_name else ""
+            keys.add(f"{prefix}down.weight")
+            keys.add(f"{prefix}up.weight")
+        return keys
+
     def save_adapters(self, path: str) -> None:
-        state = {
-            key: value
-            for key, value in self.state_dict().items()
-            if any(token in key for token in ADAPTER_STATE_KEY_TOKENS)
-        }
+        adapter_keys = self._adapter_state_keys()
+        full_state = self.state_dict()
+        missing_adapter_keys = sorted(key for key in adapter_keys if key not in full_state)
+        if missing_adapter_keys:
+            missing_preview = ", ".join(missing_adapter_keys[:5])
+            raise RuntimeError(
+                "Failed to collect adapter state keys from model state dict. "
+                f"Missing keys: {missing_preview}"
+            )
+
+        state = {key: full_state[key] for key in sorted(adapter_keys)}
         torch.save(state, path)
 
     def load_adapters(self, path: str) -> None:
         state = torch.load(path, map_location="cpu", weights_only=True)
+        expected_keys = self._adapter_state_keys()
+        loaded_keys = set(state.keys())
+
+        missing_keys = sorted(expected_keys - loaded_keys)
+        unexpected_keys = sorted(loaded_keys - expected_keys)
+        if missing_keys or unexpected_keys:
+            parts = []
+            if missing_keys:
+                parts.append(f"missing={missing_keys[:5]}")
+            if unexpected_keys:
+                parts.append(f"unexpected={unexpected_keys[:5]}")
+            details = ", ".join(parts)
+            raise RuntimeError(
+                "Adapter checkpoint keys do not match current LoRA structure: "
+                f"{details}"
+            )
+
         self.load_state_dict(state, strict=False)
