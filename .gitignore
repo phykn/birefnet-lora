@@ -1,4 +1,4 @@
-# Python bytecode and caches
+# Python caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,32 +6,32 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Packaging and build outputs
-*.egg-info/
+# Build artifacts
 build/
 dist/
+*.egg-info/
 
-# Virtual environments and local env files
+# Local environments
 .venv/
 venv/
 env/
 .env
 .env.*
 
-# Training artifacts
-run/
+# Training data and outputs
 data/
 weight/
+run/
 
-# Editor and OS noise
-.DS_Store
+# Local tooling and editor files
+.codex
 .idea/
 .vscode/
+.DS_Store
 
-# Codex
-.codex
+# Local operational docs
 AGENTS.md
 REFACTOR_PLAN.md
 
-# Scripts
+# Local scripts
 scripts/

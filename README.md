@@ -1,21 +1,23 @@
 # BiRefNet LoRA Fine-Tuning
 
-A clean, modular, and efficient pipeline for fine-tuning [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) using **Low-Rank Adaptation (LoRA)**. By applying LoRA to the Swin Transformer backbone and the decoder, this project allows for memory-efficient adaptation with significantly fewer trainable parameters while keeping baseline weights frozen.
+LoRA fine-tuning pipeline for [BiRefNet](https://github.com/ZhengPeng7/BiRefNet).
+The project keeps base weights frozen and trains lightweight adapters on the Swin backbone and decoder modules.
 
-## Features
-- **Efficient Fine-Tuning**: Integrates LoRA (`LoRALinear` & `LoRAConv2d`).
-- **Data Pipeline**: Built-in augmentations via Albumentations, automatic train/valid splitting.
-- **Tracking**: Automatically saves configs, dataset splits (`train.csv`, `valid.csv`), and TensorBoard logs per run.
+## What You Get
+- LoRA modules for linear and convolution layers.
+- Dataset pipeline with Albumentations and train/valid split export.
+- Per-run artifacts in `run/<YYYYMMDD_HHMMSS>/` (config, CSV splits, logs, adapter weights).
 
-## Setup & Training
-
-### 1. Requirements
+## Quick Start
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-
-### 2. Configuration
-Prepare your data (images and masks with matching filenames) and pre-trained weights. Update `src/config/tune.yaml` accordingly:
+2. Place data and pretrained weights:
+- images: `data/image/`
+- masks: `data/mask/`
+- checkpoint: `weight/BiRefNet-general-epoch_244.pth` (or your own)
+3. Update `src/config/tune.yaml`:
 ```yaml
 data:
   img_dir: "data/image"
@@ -24,22 +26,32 @@ data:
 birefnet:
   weight: "weight/BiRefNet-general-epoch_244.pth"
 ```
-
-### 3. Run
+4. Start training:
 ```bash
 python train.py
 ```
 
-Outputs containing checkpoints, logs, and configs will be automatically saved to `run/<timestamp>/`.
-
-## Validation Checklist
-Run the following commands before committing:
-
+## Monitoring
 ```bash
-python -m compileall src train.py
-pytest -q
-ruff check .
+tensorboard --logdir run
 ```
 
-## References
-- [BiRefNet Official Repository](https://github.com/ZhengPeng7/BiRefNet)
+## Validation Checklist
+```bash
+python -m compileall src train.py
+```
+
+Optional smoke test:
+1. Reduce `train.steps` in `src/config/tune.yaml` (for example, `10`).
+2. Run `python train.py`.
+3. Confirm a new `run/<timestamp>/` directory is created.
+
+## Project Layout
+- `train.py`: training entrypoint.
+- `src/models/`: BiRefNet architecture and backbones.
+- `src/finetune/`: LoRA adapters, loss, and trainer.
+- `src/data/`: datasets and augmentations.
+- `src/config/tune.yaml`: runtime configuration.
+
+## Reference
+- [BiRefNet official repository](https://github.com/ZhengPeng7/BiRefNet)
