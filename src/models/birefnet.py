@@ -9,6 +9,8 @@ from .backbones.build_backbone import build_backbone
 from .modules.decoder_blocks import BasicDecBlk
 from .modules.lateral_blocks import BasicLatBlk
 
+GDT_INTER_CHANNELS = 16
+
 
 def image2patches(
     image: torch.Tensor,
@@ -117,30 +119,29 @@ class Decoder(nn.Module):
             self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
 
             if self.out_ref:
-                _N = 16
                 self.gdt_convs_4 = nn.Sequential(
-                    nn.Conv2d(dec_blk_out_channels[0], _N, 3, padding=1),
-                    nn.BatchNorm2d(_N),
+                    nn.Conv2d(dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1),
+                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
                     nn.ReLU(inplace=True)
                 )
                 self.gdt_convs_3 = nn.Sequential(
-                    nn.Conv2d(dec_blk_out_channels[1], _N, 3, padding=1),
-                    nn.BatchNorm2d(_N),
+                    nn.Conv2d(dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1),
+                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
                     nn.ReLU(inplace=True)
                 )
                 self.gdt_convs_2 = nn.Sequential(
-                    nn.Conv2d(dec_blk_out_channels[2], _N, 3, padding=1),
-                    nn.BatchNorm2d(_N),
+                    nn.Conv2d(dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1),
+                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
                     nn.ReLU(inplace=True)
                 )
 
-                self.gdt_convs_pred_4 = nn.Sequential(nn.Conv2d(_N, 1, 1))
-                self.gdt_convs_pred_3 = nn.Sequential(nn.Conv2d(_N, 1, 1))
-                self.gdt_convs_pred_2 = nn.Sequential(nn.Conv2d(_N, 1, 1))
+                self.gdt_convs_pred_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+                self.gdt_convs_pred_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+                self.gdt_convs_pred_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
-                self.gdt_convs_attn_4 = nn.Sequential(nn.Conv2d(_N, 1, 1))
-                self.gdt_convs_attn_3 = nn.Sequential(nn.Conv2d(_N, 1, 1))
-                self.gdt_convs_attn_2 = nn.Sequential(nn.Conv2d(_N, 1, 1))
+                self.gdt_convs_attn_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+                self.gdt_convs_attn_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+                self.gdt_convs_attn_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
     def forward(
         self,
@@ -382,18 +383,18 @@ class BiRefNet(nn.Module):
             x_pyramid = F.interpolate(x, size=(H // 2, W // 2), mode="bilinear", align_corners=True)
             
             if self.mul_scl_ipt == "cat":
-                x1_, x2_, x3_, x4_ = self.bb(x_pyramid)
-                x1 = torch.cat([x1, F.interpolate(x1_, size=x1.shape[2:], mode="bilinear", align_corners=True)], dim=1)
-                x2 = torch.cat([x2, F.interpolate(x2_, size=x2.shape[2:], mode="bilinear", align_corners=True)], dim=1)
-                x3 = torch.cat([x3, F.interpolate(x3_, size=x3.shape[2:], mode="bilinear", align_corners=True)], dim=1)
-                x4 = torch.cat([x4, F.interpolate(x4_, size=x4.shape[2:], mode="bilinear", align_corners=True)], dim=1)
+                pyramid_x1, pyramid_x2, pyramid_x3, pyramid_x4 = self.bb(x_pyramid)
+                x1 = torch.cat([x1, F.interpolate(pyramid_x1, size=x1.shape[2:], mode="bilinear", align_corners=True)], dim=1)
+                x2 = torch.cat([x2, F.interpolate(pyramid_x2, size=x2.shape[2:], mode="bilinear", align_corners=True)], dim=1)
+                x3 = torch.cat([x3, F.interpolate(pyramid_x3, size=x3.shape[2:], mode="bilinear", align_corners=True)], dim=1)
+                x4 = torch.cat([x4, F.interpolate(pyramid_x4, size=x4.shape[2:], mode="bilinear", align_corners=True)], dim=1)
                 
             elif self.mul_scl_ipt == "add":
-                x1_, x2_, x3_, x4_ = self.bb(x_pyramid)
-                x1 = x1 + F.interpolate(x1_, size=x1.shape[2:], mode="bilinear", align_corners=True)
-                x2 = x2 + F.interpolate(x2_, size=x2.shape[2:], mode="bilinear", align_corners=True)
-                x3 = x3 + F.interpolate(x3_, size=x3.shape[2:], mode="bilinear", align_corners=True)
-                x4 = x4 + F.interpolate(x4_, size=x4.shape[2:], mode="bilinear", align_corners=True)
+                pyramid_x1, pyramid_x2, pyramid_x3, pyramid_x4 = self.bb(x_pyramid)
+                x1 = x1 + F.interpolate(pyramid_x1, size=x1.shape[2:], mode="bilinear", align_corners=True)
+                x2 = x2 + F.interpolate(pyramid_x2, size=x2.shape[2:], mode="bilinear", align_corners=True)
+                x3 = x3 + F.interpolate(pyramid_x3, size=x3.shape[2:], mode="bilinear", align_corners=True)
+                x4 = x4 + F.interpolate(pyramid_x4, size=x4.shape[2:], mode="bilinear", align_corners=True)
 
                 
         class_preds = None

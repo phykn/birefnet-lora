@@ -224,9 +224,9 @@ class SwinTransformerBlock(nn.Module):
         x: torch.Tensor,
         mask_matrix: torch.Tensor
     ) -> torch.Tensor:
-        b, l, c = x.shape
+        b, seq_len, c = x.shape
         h, w = self.h, self.w
-        assert l == h * w, "input feature has wrong size"
+        assert seq_len == h * w, "input feature has wrong size"
 
         shortcut = x
         x = self.norm1(x)
@@ -309,8 +309,8 @@ class PatchMerging(nn.Module):
         height: int,
         width: int
     ) -> torch.Tensor:
-        b, l, c = x.shape
-        assert l == height * width, "input feature has wrong size"
+        b, seq_len, c = x.shape
+        assert seq_len == height * width, "input feature has wrong size"
 
         x = x.view(b, height, width, c)
 

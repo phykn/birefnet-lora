@@ -15,11 +15,11 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configuration
-Prepare your data (images and masks with matching filenames) and pre-trained weights. Update `src/config/finetune.yaml` accordingly:
+Prepare your data (images and masks with matching filenames) and pre-trained weights. Update `src/config/tune.yaml` accordingly:
 ```yaml
 data:
-  img_dir: "data/images"
-  mask_dir: "data/masks"
+  img_dir: "data/image"
+  mask_dir: "data/mask"
   size: [1024, 1024]
 birefnet:
   weight: "weight/BiRefNet-general-epoch_244.pth"
@@ -31,6 +31,15 @@ python train.py
 ```
 
 Outputs containing checkpoints, logs, and configs will be automatically saved to `run/<timestamp>/`.
+
+## Validation Checklist
+Run the following commands before committing:
+
+```bash
+python -m compileall src train.py
+pytest -q
+ruff check .
+```
 
 ## References
 - [BiRefNet Official Repository](https://github.com/ZhengPeng7/BiRefNet)

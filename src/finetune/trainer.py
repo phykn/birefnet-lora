@@ -1,7 +1,7 @@
 import os
-import torch
-
 from datetime import datetime
+
+import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -24,27 +24,29 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
-        self.scaler = torch.amp.GradScaler("cuda")
 
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_dir = os.path.join("run", now)
+        self.amp_device_type = "cuda" if device.type == "cuda" else "cpu"
+        self.use_amp = device.type == "cuda"
+        self.scaler = torch.amp.GradScaler(self.amp_device_type, enabled=self.use_amp)
+
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.save_dir = os.path.join("run", run_timestamp)
         os.makedirs(self.save_dir, exist_ok=True)
 
         log_dir = os.path.join(self.save_dir, "logs")
         self.writer = SummaryWriter(log_dir=log_dir) if use_tensorboard else None
         self.train_iter = iter(self.train_loader)
 
-    def train(
-        self,
-        steps: int,
-        val_freq: int = 500,
-        save_freq: int = 1000
-    ) -> None:
-        pbar = tqdm(range(1, steps + 1), desc="Training")
+    def train(self, steps: int, val_freq: int = 500, save_freq: int = 1000) -> None:
+        progress_bar = tqdm(range(1, steps + 1), desc="Training")
 
-        for step in pbar:
+        for step in progress_bar:
             losses = self._step()
-            pbar.set_postfix(loss=f"{losses['loss']:.4f}", seg=f"{losses['seg']:.4f}", aux=f"{losses['aux']:.4f}")
+            progress_bar.set_postfix(
+                loss=f"{losses['loss']:.4f}",
+                seg=f"{losses['seg']:.4f}",
+                aux=f"{losses['aux']:.4f}",
+            )
 
             if self.writer:
                 self.writer.add_scalar("Train/Loss", losses["loss"], step)
@@ -52,33 +54,37 @@ class Trainer:
                 self.writer.add_scalar("Train/Aux", losses["aux"], step)
 
             if step % val_freq == 0:
-                val_loss = self._validate()
+                valid_loss = self._validate()
                 if self.writer:
-                    self.writer.add_scalar("Val/Loss", val_loss, step)
+                    self.writer.add_scalar("Val/Loss", valid_loss, step)
 
             if step % save_freq == 0:
                 self._save()
 
+        if self.writer:
+            self.writer.flush()
+            self.writer.close()
+
     def _step(self) -> dict[str, float]:
         self.model.train()
         batch = self._get_batch()
-        imgs = batch["image"].to(self.device)
+        images = batch["image"].to(self.device)
         masks = batch["mask"].to(self.device)
 
-        self.optimizer.zero_grad()
-        with torch.amp.autocast("cuda"):
-            out, loss_aux = self.model(imgs)
-            loss_seg = self.criterion(out, masks)
-            loss = loss_seg + loss_aux
+        self.optimizer.zero_grad(set_to_none=True)
+        with torch.amp.autocast(self.amp_device_type, enabled=self.use_amp):
+            prediction, aux_loss = self.model(images)
+            segmentation_loss = self.criterion(prediction, masks)
+            total_loss = segmentation_loss + aux_loss
 
-        self.scaler.scale(loss).backward()
+        self.scaler.scale(total_loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
 
         return {
-            "loss": loss.item(),
-            "seg": loss_seg.item(),
-            "aux": loss_aux.item()
+            "loss": total_loss.item(),
+            "seg": segmentation_loss.item(),
+            "aux": aux_loss.item(),
         }
 
     @torch.no_grad()
@@ -87,23 +93,23 @@ class Trainer:
         total_loss = 0.0
 
         for batch in self.valid_loader:
-            imgs = batch["image"].to(self.device)
+            images = batch["image"].to(self.device)
             masks = batch["mask"].to(self.device)
 
-            with torch.amp.autocast("cuda"):
-                out = self.model(imgs)
-                loss = self.criterion(out, masks)
+            with torch.amp.autocast(self.amp_device_type, enabled=self.use_amp):
+                prediction = self.model(images)
+                loss = self.criterion(prediction, masks)
 
             total_loss += loss.item()
 
-        n = len(self.valid_loader)
-        return total_loss / n if n > 0 else 0.0
+        num_batches = len(self.valid_loader)
+        return total_loss / num_batches if num_batches > 0 else 0.0
 
     def _save(self) -> None:
         if hasattr(self.model, "save_adapters"):
-            wdir = os.path.join(self.save_dir, "weights")
-            os.makedirs(wdir, exist_ok=True)
-            path = os.path.join(wdir, "last.pth")
+            weights_dir = os.path.join(self.save_dir, "weights")
+            os.makedirs(weights_dir, exist_ok=True)
+            path = os.path.join(weights_dir, "last.pth")
             self.model.save_adapters(path)
 
     def _get_batch(self) -> dict[str, torch.Tensor]:

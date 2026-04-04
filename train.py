@@ -1,54 +1,100 @@
 import csv
+import json
 import os
+
 import torch
 
-from src.build import build_dl, build_lora_birefnet, build_trainer
+from src.build import build_birefnet, build_dataloaders, build_lora_birefnet, build_trainer
 from src.utils.io import load_yaml, save_yaml
 from src.utils.misc import ConfigDict
 
 
-def save_data_csv(
-    data: dict[str, list[str]],
-    wdir: str
-) -> None:
-    for split in ["train", "valid"]:
-        path = f"{wdir}/{split}.csv"
-        with open(path, "w", newline="") as f:
-            writer = csv.writer(f)
+def save_split_csv(split_filenames: dict[str, list[str]], output_dir: str) -> None:
+    for split_name in ["train", "valid"]:
+        csv_path = f"{output_dir}/{split_name}.csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as file_obj:
+            writer = csv.writer(file_obj)
             writer.writerow(["filename"])
-            for name in data.get(split, []):
-                writer.writerow([name])
+            for filename in split_filenames.get(split_name, []):
+                writer.writerow([filename])
+
+
+def normalize_config(config_data: dict) -> dict:
+    train_cfg = config_data.get("train", {}) or {}
+
+    dl_cfg = config_data.get("dl", {}) or {}
+    trainer_cfg = config_data.get("trainer", {}) or {}
+
+    train_cfg.setdefault("batch", dl_cfg.get("batch"))
+    train_cfg.setdefault("num_workers", dl_cfg.get("num_workers"))
+    train_cfg.setdefault("pin_memory", dl_cfg.get("pin_memory"))
+
+    train_cfg.setdefault("lr", trainer_cfg.get("lr"))
+    train_cfg.setdefault("steps", trainer_cfg.get("steps"))
+    train_cfg.setdefault("val_freq", trainer_cfg.get("val_freq"))
+    train_cfg.setdefault("save_freq", trainer_cfg.get("save_freq"))
+
+    config_data["train"] = train_cfg
+    return config_data
+
+
+def print_run_info(
+    cfg: ConfigDict,
+    split_filenames: dict[str, list[str]],
+    model: torch.nn.Module,
+) -> None:
+    train_count = len(split_filenames.get("train", []))
+    valid_count = len(split_filenames.get("valid", []))
+
+    print("[Config]")
+    print(json.dumps(cfg.to_dict(), indent=2, ensure_ascii=False))
+    print(f"[Dataset] train={train_count}, valid={valid_count}")
+    if hasattr(model, "stats"):
+        total_params = model.stats.get("total", 0)
+        trainable_params = model.stats.get("trainable", 0)
+        ratio = (trainable_params / total_params) if total_params else 0.0
+        print(
+            "[LoRABiRefNet] "
+            f"total={total_params:,}  "
+            f"trainable={trainable_params:,}  "
+            f"ratio={ratio:.2%}"
+        )
 
 
 def train() -> None:
-    data = load_yaml(path="src/config/finetune.yaml")
-    cfg = ConfigDict(data)
+    config_data = load_yaml(path="src/config/tune.yaml")
+    config_data = normalize_config(config_data=config_data)
+    cfg = ConfigDict(config_data)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = build_lora_birefnet(cfg=cfg).to(device)
-    train_dl, valid_dl, data = build_dl(cfg=cfg)
+    base_model = build_birefnet(cfg=cfg)
+    lora_ckpt_path = cfg.get("lora", {}).get("ckpt", None)
+    model = build_lora_birefnet(cfg=cfg, model=base_model, ckpt_path=lora_ckpt_path).to(device)
+    train_loader, valid_loader, split_filenames = build_dataloaders(cfg=cfg)
 
     trainer = build_trainer(
-        cfg = cfg,
-        model = model,
-        train_dl = train_dl,
-        valid_dl = valid_dl,
+        cfg=cfg,
+        model=model,
+        train_dl=train_loader,
+        valid_dl=valid_loader,
     )
 
+    print_run_info(cfg=cfg, split_filenames=split_filenames, model=model)
+
     save_yaml(data=cfg.to_dict(), path=f"{trainer.save_dir}/config.yaml")
-    save_data_csv(data=data, wdir=trainer.save_dir)
+    save_split_csv(split_filenames=split_filenames, output_dir=trainer.save_dir)
 
     trainer.train(
-        steps = cfg.train.steps,
-        val_freq = cfg.train.val_freq,
-        save_freq = cfg.train.save_freq,
+        steps=cfg.train.steps,
+        val_freq=cfg.train.val_freq,
+        save_freq=cfg.train.save_freq,
     )
 
     if hasattr(model, "save_adapters"):
-        wdir = f"{trainer.save_dir}/weights"
-        os.makedirs(wdir, exist_ok=True)
-        model.save_adapters(f"{wdir}/model.pth")
+        weights_dir = f"{trainer.save_dir}/weights"
+        os.makedirs(weights_dir, exist_ok=True)
+        model.save_adapters(f"{weights_dir}/model.pth")
 
 
 if __name__ == "__main__":

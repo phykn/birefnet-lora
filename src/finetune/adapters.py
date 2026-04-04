@@ -1,34 +1,27 @@
 import math
+
 import torch
 import torch.nn as nn
 
 
 class LoRALinear(nn.Module):
-    def __init__(
-        self,
-        linear: nn.Linear,
-        rank: int = 8,
-        alpha: float = 16.0
-    ) -> None:
+    def __init__(self, linear: nn.Linear, rank: int = 8, alpha: float = 16.0) -> None:
         super().__init__()
         self.linear = linear
         self.scale = alpha / rank
 
-        for p in self.linear.parameters():
-            p.requires_grad = False
-
-        in_features = linear.in_features
-        out_features = linear.out_features
+        for param in self.linear.parameters():
+            param.requires_grad = False
 
         self.down = nn.Linear(
-            in_features = in_features,
-            out_features = rank,
-            bias = False
+            in_features=linear.in_features,
+            out_features=rank,
+            bias=False,
         )
         self.up = nn.Linear(
-            in_features = rank,
-            out_features = out_features,
-            bias = False
+            in_features=rank,
+            out_features=linear.out_features,
+            bias=False,
         )
 
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
@@ -39,37 +32,29 @@ class LoRALinear(nn.Module):
 
 
 class LoRAConv2d(nn.Module):
-    def __init__(
-        self,
-        conv: nn.Conv2d,
-        rank: int = 8,
-        alpha: float = 16.0
-    ) -> None:
+    def __init__(self, conv: nn.Conv2d, rank: int = 8, alpha: float = 16.0) -> None:
         super().__init__()
         self.conv = conv
         self.scale = alpha / rank
 
-        for p in self.conv.parameters():
-            p.requires_grad = False
-
-        in_channels = conv.in_channels
-        out_channels = conv.out_channels
+        for param in self.conv.parameters():
+            param.requires_grad = False
 
         self.down = nn.Conv2d(
-            in_channels = in_channels,
-            out_channels = rank,
-            kernel_size = conv.kernel_size,
-            stride = conv.stride,
-            padding = conv.padding,
-            dilation = conv.dilation,
-            groups = conv.groups,
-            bias = False
+            in_channels=conv.in_channels,
+            out_channels=rank,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            dilation=conv.dilation,
+            groups=conv.groups,
+            bias=False,
         )
         self.up = nn.Conv2d(
-            in_channels = rank,
-            out_channels = out_channels,
-            kernel_size = 1,
-            bias = False
+            in_channels=rank,
+            out_channels=conv.out_channels,
+            kernel_size=1,
+            bias=False,
         )
 
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
@@ -79,20 +64,16 @@ class LoRAConv2d(nn.Module):
         return self.conv(x) + self.up(self.down(x)) * self.scale
 
 
-def apply_linear(
-    model: nn.Module,
-    rank: int = 8,
-    alpha: float = 16.0
-) -> None:
-    for _, m in model.named_modules():
-        if isinstance(m, (LoRALinear, LoRAConv2d)):
+def apply_linear(model: nn.Module, rank: int = 8, alpha: float = 16.0) -> None:
+    for _, module in model.named_modules():
+        if isinstance(module, (LoRALinear, LoRAConv2d)):
             continue
-        for child_name, child_module in m.named_children():
+        for child_name, child_module in module.named_children():
             if isinstance(child_module, nn.Linear):
                 setattr(
-                    m,
+                    module,
                     child_name,
-                    LoRALinear(linear=child_module, rank=rank, alpha=alpha)
+                    LoRALinear(linear=child_module, rank=rank, alpha=alpha),
                 )
 
 
@@ -103,15 +84,15 @@ def apply_conv2d(
     exclude_names: list[str] | None = None,
 ) -> None:
     excludes = exclude_names or []
-    for _, m in model.named_modules():
-        if isinstance(m, (LoRALinear, LoRAConv2d)):
+    for _, module in model.named_modules():
+        if isinstance(module, (LoRALinear, LoRAConv2d)):
             continue
-        for child_name, child_module in m.named_children():
+        for child_name, child_module in module.named_children():
             if isinstance(child_module, nn.Conv2d):
                 if any(name in child_name for name in excludes):
                     continue
                 setattr(
-                    m,
+                    module,
                     child_name,
-                    LoRAConv2d(conv=child_module, rank=rank, alpha=alpha)
+                    LoRAConv2d(conv=child_module, rank=rank, alpha=alpha),
                 )

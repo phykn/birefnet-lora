@@ -1,1 +1,3 @@
-from .birefnet import BiRefNet
+from .birefnet import BiRefNet as BiRefNet
+
+__all__ = ["BiRefNet"]
