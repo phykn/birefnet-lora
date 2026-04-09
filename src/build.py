@@ -12,38 +12,52 @@ from .finetune.trainer import Trainer
 from .models.birefnet import BiRefNet
 
 
-def build_dl(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
+def build_pairs(
+    image_paths: list[str],
+    mask_paths: list[str],
+) -> list[tuple[str, str]]:
+    image_map: dict[str, str] = {}
+    for p in image_paths:
+        stem = Path(p).stem
+        if stem in image_map:
+            raise ValueError(f"Duplicate image stem detected: {stem}")
+        image_map[stem] = p
+
+    mask_map: dict[str, str] = {}
+    for p in mask_paths:
+        stem = Path(p).stem
+        if stem in mask_map:
+            raise ValueError(f"Duplicate mask stem detected: {stem}")
+        mask_map[stem] = p
+
+    if set(image_map) != set(mask_map):
+        raise ValueError(
+            "Image/mask filename mismatch: "
+            f"image_only={sorted(set(image_map) - set(mask_map))[:5]}, "
+            f"mask_only={sorted(set(mask_map) - set(image_map))[:5]}"
+        )
+
+    common_stems = sorted(image_map)
+    return [(image_map[s], mask_map[s]) for s in common_stems]
+
+
+def build_dataloaders(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
     image_dir = Path(cfg.data.img_dir)
     mask_dir = Path(cfg.data.mask_dir)
 
     normalized_exts = {ext.lower() for ext in FineTuneDataset.EXTS}
-    image_files = sorted(
-        file_path
-        for file_path in image_dir.glob("*")
+    image_files = [
+        str(file_path)
+        for file_path in sorted(image_dir.glob("*"))
         if file_path.is_file() and file_path.suffix.lower() in normalized_exts
-    )
-    mask_files = sorted(
-        file_path
-        for file_path in mask_dir.glob("*")
+    ]
+    mask_files = [
+        str(file_path)
+        for file_path in sorted(mask_dir.glob("*"))
         if file_path.is_file() and file_path.suffix.lower() in normalized_exts
-    )
+    ]
 
-    image_map = {}
-    for file_path in image_files:
-        stem = file_path.stem
-        if stem in image_map:
-            raise ValueError(f"Duplicate image stem detected: {stem}")
-        image_map[stem] = str(file_path)
-
-    mask_map = {}
-    for file_path in mask_files:
-        stem = file_path.stem
-        if stem in mask_map:
-            raise ValueError(f"Duplicate mask stem detected: {stem}")
-        mask_map[stem] = str(file_path)
-
-    common_stems = sorted(set(image_map) & set(mask_map))
-    paired_paths = [(image_map[stem], mask_map[stem]) for stem in common_stems]
+    paired_paths = build_pairs(image_files, mask_files)
 
     rng = random.Random(42)
     rng.shuffle(paired_paths)
@@ -89,10 +103,6 @@ def build_dl(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
     }
 
     return train_loader, valid_loader, split_filenames
-
-
-def build_dataloaders(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
-    return build_dl(cfg=cfg)
 
 
 def build_birefnet(cfg: Any) -> BiRefNet:
