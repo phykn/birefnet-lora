@@ -35,3 +35,15 @@ class SegmentationLoss(nn.Module):
         iou_loss = self.iou(pred.sigmoid(), target) * self.lambda_iou
 
         return bce_loss + iou_loss
+
+
+class ConsistencyLoss(nn.Module):
+    def forward(self, logits1: torch.Tensor, logits2: torch.Tensor) -> torch.Tensor:
+        if logits1.shape[2:] != logits2.shape[2:]:
+            logits2 = F.interpolate(
+                logits2,
+                size=logits1.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+        return F.mse_loss(logits1, logits2)
