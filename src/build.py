@@ -144,8 +144,11 @@ def build_trainer(
     train_dl: DataLoader,
     valid_dl: DataLoader,
 ) -> Trainer:
+    from .finetune.loss import ConsistencyLoss
+
     device = next(model.parameters()).device
     criterion = SegmentationLoss()
+    cons_criterion = ConsistencyLoss()
     optimizer = torch.optim.AdamW(params=model.get_adapter_params(), lr=cfg.train.lr)
 
     return Trainer(
@@ -153,6 +156,12 @@ def build_trainer(
         train_loader=train_dl,
         valid_loader=valid_dl,
         criterion=criterion,
+        cons_criterion=cons_criterion,
         optimizer=optimizer,
         device=device,
+        lambda_cons=cfg.train.lambda_cons,
+        max_grad_norm=cfg.train.max_grad_norm,
+        scheduler_name=cfg.train.scheduler,
+        warmup_steps=cfg.train.warmup_steps,
+        total_steps=cfg.train.steps,
     )
