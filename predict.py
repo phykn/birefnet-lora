@@ -17,8 +17,8 @@ EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 def load_image(path: str, size: tuple[int, int]) -> torch.Tensor:
     image = Image.open(path).convert("RGB")
     tensor = TF.to_tensor(image)
-    tensor = TF.normalize(tensor, mean=MEAN, std=STD)
     tensor = TF.resize(tensor, list(size), antialias=True)
+    tensor = TF.normalize(tensor, mean=MEAN, std=STD)
     return tensor.unsqueeze(0)
 
 
