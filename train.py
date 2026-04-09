@@ -19,25 +19,6 @@ def save_split_csv(split_filenames: dict[str, list[str]], output_dir: str) -> No
                 writer.writerow([filename])
 
 
-def normalize_config(config_data: dict) -> dict:
-    train_cfg = config_data.get("train", {}) or {}
-
-    dl_cfg = config_data.get("dl", {}) or {}
-    trainer_cfg = config_data.get("trainer", {}) or {}
-
-    train_cfg.setdefault("batch", dl_cfg.get("batch"))
-    train_cfg.setdefault("num_workers", dl_cfg.get("num_workers"))
-    train_cfg.setdefault("pin_memory", dl_cfg.get("pin_memory"))
-
-    train_cfg.setdefault("lr", trainer_cfg.get("lr"))
-    train_cfg.setdefault("steps", trainer_cfg.get("steps"))
-    train_cfg.setdefault("val_freq", trainer_cfg.get("val_freq"))
-    train_cfg.setdefault("save_freq", trainer_cfg.get("save_freq"))
-
-    config_data["train"] = train_cfg
-    return config_data
-
-
 def print_run_info(
     cfg: ConfigDict,
     split_filenames: dict[str, list[str]],
@@ -63,7 +44,6 @@ def print_run_info(
 
 def train() -> None:
     config_data = load_yaml(path="src/config/tune.yaml")
-    config_data = normalize_config(config_data=config_data)
     cfg = ConfigDict(config_data)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

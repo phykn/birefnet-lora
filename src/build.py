@@ -83,18 +83,18 @@ def build_dataloaders(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[
 
     train_loader = DataLoader(
         dataset=train_dataset,
-        batch_size=cfg.dl.batch,
+        batch_size=cfg.train.batch,
         shuffle=True,
-        num_workers=cfg.dl.num_workers,
-        pin_memory=cfg.dl.pin_memory,
+        num_workers=cfg.train.num_workers,
+        pin_memory=cfg.train.pin_memory,
         drop_last=True,
     )
     valid_loader = DataLoader(
         dataset=valid_dataset,
-        batch_size=cfg.dl.batch,
+        batch_size=cfg.train.batch,
         shuffle=False,
-        num_workers=cfg.dl.num_workers,
-        pin_memory=cfg.dl.pin_memory,
+        num_workers=cfg.train.num_workers,
+        pin_memory=cfg.train.pin_memory,
     )
 
     split_filenames = {
@@ -146,7 +146,7 @@ def build_trainer(
 ) -> Trainer:
     device = next(model.parameters()).device
     criterion = SegmentationLoss()
-    optimizer = torch.optim.AdamW(params=model.get_adapter_params(), lr=cfg.trainer.lr)
+    optimizer = torch.optim.AdamW(params=model.get_adapter_params(), lr=cfg.train.lr)
 
     return Trainer(
         model=model,

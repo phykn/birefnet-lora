@@ -4,11 +4,6 @@ data:
   size: [1024, 1024]
   split_ratio: 0.1
 
-dl:
-  batch: 4
-  num_workers: 0
-  pin_memory: false
-
 birefnet:
   weight: "weight/BiRefNet-general-epoch_244.pth"
   lateral_channels_in_collection: [1536, 768, 384, 192]
@@ -22,8 +17,15 @@ lora:
   rank: 8
   alpha: 16.0
 
-trainer:
+train:
+  batch: 4
+  num_workers: 0
+  pin_memory: false
   lr: 0.0001
+  scheduler: "cosine"
+  warmup_steps: 50
+  max_grad_norm: 1.0
   steps: 1000
   val_freq: 50
-  save_freq: 100  
+  save_freq: 100
+  lambda_cons: 0.1
