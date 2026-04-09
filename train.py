@@ -60,6 +60,16 @@ def train() -> None:
         valid_dl=valid_loader,
     )
 
+    resume_from = cfg.train.get("resume_from", None)
+    start_step = 0
+    if resume_from:
+        checkpoint_path = os.path.join(resume_from, "weights", "checkpoint.pth")
+        adapter_path = os.path.join(resume_from, "weights", "last.pth")
+        if hasattr(model, "load_adapters"):
+            model.load_adapters(adapter_path)
+        start_step = trainer.load_checkpoint(checkpoint_path)
+        print(f"[Resume] from step {start_step}, dir={resume_from}")
+
     print_run_info(cfg=cfg, split_filenames=split_filenames, model=model)
 
     save_yaml(data=cfg.to_dict(), path=f"{trainer.save_dir}/config.yaml")
@@ -69,6 +79,7 @@ def train() -> None:
         steps=cfg.train.steps,
         val_freq=cfg.train.val_freq,
         save_freq=cfg.train.save_freq,
+        start_step=start_step,
     )
 
     if hasattr(model, "save_adapters"):

@@ -65,8 +65,28 @@ class Trainer:
         cosine = CosineAnnealingLR(self.optimizer, T_max=max(total_steps - warmup_steps, 1))
         return SequentialLR(self.optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps])
 
-    def train(self, steps: int, val_freq: int = 500, save_freq: int = 1000) -> None:
-        progress_bar = tqdm(range(1, steps + 1), desc="Training")
+    def save_checkpoint(self, path: str, step: int) -> None:
+        state = {
+            "step": step,
+            "optimizer": self.optimizer.state_dict(),
+            "scaler": self.scaler.state_dict(),
+            "best_val_loss": self.best_val_loss,
+        }
+        if self.scheduler:
+            state["scheduler"] = self.scheduler.state_dict()
+        torch.save(state, path)
+
+    def load_checkpoint(self, path: str) -> int:
+        state = torch.load(path, map_location="cpu", weights_only=False)
+        self.optimizer.load_state_dict(state["optimizer"])
+        self.scaler.load_state_dict(state["scaler"])
+        self.best_val_loss = state.get("best_val_loss", float("inf"))
+        if self.scheduler and "scheduler" in state:
+            self.scheduler.load_state_dict(state["scheduler"])
+        return state["step"]
+
+    def train(self, steps: int, val_freq: int = 500, save_freq: int = 1000, start_step: int = 0) -> None:
+        progress_bar = tqdm(range(start_step + 1, steps + 1), desc="Training")
 
         for step in progress_bar:
             losses = self._step()
@@ -90,10 +110,10 @@ class Trainer:
                     self.writer.add_scalar("Val/Loss", valid_loss, step)
                 if valid_loss < self.best_val_loss:
                     self.best_val_loss = valid_loss
-                    self._save(filename="best.pth")
+                    self._save(filename="best.pth", step=step)
 
             if step % save_freq == 0:
-                self._save(filename="last.pth")
+                self._save(filename="last.pth", step=step)
 
         if self.writer:
             self.writer.flush()
@@ -154,12 +174,12 @@ class Trainer:
         num_batches = len(self.valid_loader)
         return total_loss / num_batches if num_batches > 0 else 0.0
 
-    def _save(self, filename: str = "last.pth") -> None:
+    def _save(self, filename: str = "last.pth", step: int = 0) -> None:
+        weights_dir = os.path.join(self.save_dir, "weights")
+        os.makedirs(weights_dir, exist_ok=True)
         if hasattr(self.model, "save_adapters"):
-            weights_dir = os.path.join(self.save_dir, "weights")
-            os.makedirs(weights_dir, exist_ok=True)
-            path = os.path.join(weights_dir, filename)
-            self.model.save_adapters(path)
+            self.model.save_adapters(os.path.join(weights_dir, filename))
+        self.save_checkpoint(os.path.join(weights_dir, "checkpoint.pth"), step=step)
 
     def _get_batch(self) -> dict[str, torch.Tensor]:
         try:
