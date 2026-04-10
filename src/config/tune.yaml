@@ -1,31 +1,35 @@
 data:
-  img_dir: "data/image"
-  mask_dir: "data/mask"
-  size: [1024, 1024]
+  image_dir: "local_data/image"
+  mask_dir: "local_data/mask"
+  size: 1024
+  scales: [0.25, 1.0]
   split_ratio: 0.1
 
-birefnet:
-  weight: "weight/BiRefNet-general-epoch_244.pth"
-  lateral_channels_in_collection: [1536, 768, 384, 192]
-  mul_scl_ipt: "cat"
-  dec_ipt: True
-  dec_ipt_split: True
-  ms_supervision: True
-  out_ref: True
+augment:
+  bc_weak:
+    brightness: 0.2
+    contrast: 0.2
+  bc_strong:
+    brightness: 0.4
+    contrast: 0.4
 
-lora:
-  rank: 8
-  alpha: 16.0
-
-train:
-  batch: 4
+dl:
+  batch: 1
   num_workers: 0
   pin_memory: false
-  lr: 0.0001
-  scheduler: "cosine"
+
+train:
+  max_lr: 1.0e-4
+  min_lr: 1.0e-7
   warmup_steps: 50
   max_grad_norm: 1.0
+  accum_steps: 1
   steps: 1000
   val_freq: 50
   save_freq: 100
-  lambda_cons: 0.1
+
+loss:
+  lambda_bce: 30.0
+  lambda_iou: 0.5
+  lambda_kl: 1.0
+  lambda_aux: 1.0

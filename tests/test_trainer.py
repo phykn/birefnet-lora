@@ -1,115 +1,120 @@
+import os
+
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 
-from src.finetune.loss import ConsistencyLoss, SegmentationLoss
-from src.finetune.trainer import Trainer
-
-
-def _make_dummy_model():
-    """Simple model mimicking LoRABiRefNet interface."""
-    class DummyModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.conv = nn.Conv2d(3, 1, 1)
-
-        def forward(self, x):
-            pred = self.conv(x)
-            if self.training:
-                aux = torch.tensor(0.0, device=x.device)
-                return pred, aux
-            return pred
-
-        def get_adapter_params(self):
-            return list(self.parameters())
-
-        def save_adapters(self, path):
-            torch.save(self.state_dict(), path)
-
-    return DummyModel()
+from src.ai.finetune.scheduler import CosineAnnealingWarmupRestarts
+from src.ai.finetune.trainer import Trainer
 
 
-def _make_dual_view_loader(batch_size=2, num_samples=4):
-    v1 = torch.randn(num_samples, 3, 32, 32)
-    v2 = torch.randn(num_samples, 3, 32, 32)
-    masks = torch.rand(num_samples, 1, 32, 32)
+class _DummyModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(3, 1, 1)
 
-    class DualViewDataset:
-        def __init__(self, v1, v2, masks):
-            self.v1 = v1
-            self.v2 = v2
-            self.masks = masks
-        def __len__(self):
-            return len(self.v1)
-        def __getitem__(self, idx):
-            return {"image_v1": self.v1[idx], "image_v2": self.v2[idx], "mask": self.masks[idx]}
+    def forward(self, x):
+        pred = self.conv(x)
+        if self.training:
+            return [pred, pred], torch.tensor(0.0, device=x.device)
+        return pred
 
-    return DataLoader(DualViewDataset(v1, v2, masks), batch_size=batch_size, drop_last=True)
+    def get_adapter_params(self):
+        return list(self.parameters())
 
-
-def _make_single_view_loader(batch_size=2, num_samples=4):
-    images = torch.randn(num_samples, 3, 32, 32)
-    masks = torch.rand(num_samples, 1, 32, 32)
-
-    class SingleViewDataset:
-        def __init__(self, images, masks):
-            self.images = images
-            self.masks = masks
-        def __len__(self):
-            return len(self.images)
-        def __getitem__(self, idx):
-            return {"image": self.images[idx], "mask": self.masks[idx]}
-
-    return DataLoader(SingleViewDataset(images, masks), batch_size=batch_size)
+    def save_adapters(self, path):
+        torch.save(self.state_dict(), path)
 
 
-def test_trainer_step_returns_expected_keys():
-    model = _make_dummy_model()
-    train_loader = _make_dual_view_loader()
-    valid_loader = _make_single_view_loader()
-    criterion = SegmentationLoss()
-    cons_criterion = ConsistencyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    device = torch.device("cpu")
+class _DummyCriterion(nn.Module):
+    def forward(self, model, batch):
+        device = next(model.parameters()).device
+        if model.training:
+            preds, aux = model(batch["image_1"].to(device))
+            seg = sum(p.mean() ** 2 for p in preds) / len(preds)
+            cons = (preds[0] - preds[-1]).pow(2).mean()
+            loss = seg + cons + aux
+            return {"loss": loss, "seg": seg, "cons": cons, "aux": aux}, loss
+        pred = model(batch["image_1"].to(device))
+        seg = pred.mean() ** 2
+        return {"loss": seg, "seg": seg}, seg
 
-    trainer = Trainer(
+
+class _DummyDataset(Dataset):
+    def __init__(self, n=4):
+        self.n = n
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, idx):
+        return {
+            "image_1": torch.randn(3, 8, 8),
+            "mask": torch.randint(0, 2, (1, 8, 8)).float(),
+        }
+
+
+def _make_trainer(tmp_path, monkeypatch, accum_steps=1):
+    monkeypatch.chdir(tmp_path)
+    model = _DummyModel()
+    train_loader = DataLoader(_DummyDataset(4), batch_size=2)
+    valid_loader = DataLoader(_DummyDataset(4), batch_size=2)
+    criterion = _DummyCriterion()
+    optimizer = torch.optim.AdamW(model.get_adapter_params(), lr=1e-2)
+    scheduler = CosineAnnealingWarmupRestarts(
+        optimizer=optimizer,
+        first_cycle_steps=10,
+        max_lr=1e-2,
+        min_lr=1e-4,
+        warmup_steps=2,
+    )
+    return Trainer(
         model=model,
         train_loader=train_loader,
         valid_loader=valid_loader,
         criterion=criterion,
-        cons_criterion=cons_criterion,
         optimizer=optimizer,
-        device=device,
-        lambda_cons=0.1,
-        use_tensorboard=False,
+        scheduler=scheduler,
+        max_grad_norm=1.0,
+        accum_steps=accum_steps,
     )
-    losses = trainer._step()
 
+
+def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path, monkeypatch):
+    trainer = _make_trainer(tmp_path, monkeypatch)
+    before = trainer.model.conv.weight.detach().clone()
+
+    losses = trainer.step()
+
+    assert {"loss", "seg", "cons", "aux"} <= set(losses.keys())
+    assert all(isinstance(v, float) for v in losses.values())
+    after = trainer.model.conv.weight
+    assert not torch.allclose(before, after)
+
+
+def test_trainer_step_with_accum(tmp_path, monkeypatch):
+    trainer = _make_trainer(tmp_path, monkeypatch, accum_steps=2)
+    losses = trainer.step()
     assert "loss" in losses
-    assert "seg" in losses
-    assert "aux" in losses
-    assert "cons" in losses
 
 
-def test_trainer_tracks_best_val_loss():
-    model = _make_dummy_model()
-    train_loader = _make_dual_view_loader()
-    valid_loader = _make_single_view_loader()
-    criterion = SegmentationLoss()
-    cons_criterion = ConsistencyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    device = torch.device("cpu")
+def test_trainer_validate_returns_avg_losses(tmp_path, monkeypatch):
+    trainer = _make_trainer(tmp_path, monkeypatch)
+    metrics = trainer.validate()
+    assert "loss" in metrics
+    assert "seg" in metrics
+    assert all(isinstance(v, float) for v in metrics.values())
 
-    trainer = Trainer(
-        model=model,
-        train_loader=train_loader,
-        valid_loader=valid_loader,
-        criterion=criterion,
-        cons_criterion=cons_criterion,
-        optimizer=optimizer,
-        device=device,
-        lambda_cons=0.1,
-        use_tensorboard=False,
-    )
 
-    assert trainer.best_val_loss == float("inf")
+def test_trainer_get_batch_wraps_around(tmp_path, monkeypatch):
+    trainer = _make_trainer(tmp_path, monkeypatch)
+    for _ in range(6):
+        batch = trainer.get_batch()
+        assert "image_1" in batch
+
+
+def test_trainer_save_writes_adapter_file(tmp_path, monkeypatch):
+    trainer = _make_trainer(tmp_path, monkeypatch)
+    trainer.save()
+    weights_path = os.path.join(trainer.save_dir, "weights", "last.pth")
+    assert os.path.exists(weights_path)

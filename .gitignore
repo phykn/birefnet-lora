@@ -3,35 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
 
 # Local environments
 .venv/
-venv/
-env/
-.env
-.env.*
 
 # Training data and outputs
-data/
+local_data/
 weight/
-run/
-
-# Local tooling and editor files
-.codex
-.idea/
-.vscode/
-.DS_Store
 
 # Local operational docs
-AGENTS.md
-REFACTOR_PLAN.md
-
-# Local scripts
-scripts/
+.claude/
+CLAUDE.md

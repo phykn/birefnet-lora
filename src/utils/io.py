@@ -1,19 +1,9 @@
-from typing import Any
-
-import yaml
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 
-def load_yaml(path: str) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as file_obj:
-        parsed = yaml.safe_load(file_obj)
-
-    if parsed is None:
-        return {}
-    if not isinstance(parsed, dict):
-        raise ValueError(f"YAML root must be a mapping: {path}")
-    return parsed
+def load_yaml(path: str) -> DictConfig | ListConfig:
+    return OmegaConf.load(path)
 
 
-def save_yaml(data: dict[str, Any], path: str) -> None:
-    with open(path, "w", encoding="utf-8") as file_obj:
-        yaml.safe_dump(data=data, stream=file_obj, sort_keys=False)
+def save_yaml(cfg: DictConfig | ListConfig, path: str) -> None:
+    OmegaConf.save(config=cfg, f=path)

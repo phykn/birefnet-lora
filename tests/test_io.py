@@ -1,23 +1,24 @@
-from pathlib import Path
-
-import pytest
+from omegaconf import DictConfig, OmegaConf
 
 from src.utils.io import load_yaml, save_yaml
 
 
-def test_save_and_load_yaml_roundtrip(tmp_path: Path) -> None:
-    path = tmp_path / "config.yaml"
-    expected = {"train": {"steps": 10}, "seed": 42}
-
-    save_yaml(expected, str(path))
+def test_yaml_round_trip(tmp_path):
+    cfg = OmegaConf.create({"a": 1, "b": {"c": "x", "d": [1, 2, 3]}})
+    path = tmp_path / "cfg.yaml"
+    save_yaml(cfg, str(path))
+    assert path.exists()
 
     loaded = load_yaml(str(path))
-    assert loaded == expected
+    assert isinstance(loaded, DictConfig)
+    assert loaded.a == 1
+    assert loaded.b.c == "x"
+    assert list(loaded.b.d) == [1, 2, 3]
 
 
-def test_load_yaml_raises_for_non_mapping_root(tmp_path: Path) -> None:
-    path = tmp_path / "list.yaml"
-    path.write_text("- 1\n- 2\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="YAML root must be a mapping"):
-        load_yaml(str(path))
+def test_select_default_for_missing_key(tmp_path):
+    cfg = OmegaConf.create({"present": 1})
+    path = tmp_path / "cfg.yaml"
+    save_yaml(cfg, str(path))
+    loaded = load_yaml(str(path))
+    assert OmegaConf.select(loaded, "missing.key", default="fallback") == "fallback"

@@ -1,105 +1,82 @@
+import os
 import random
 from pathlib import Path
 from typing import Any
 
 import torch
+from glob import glob
 from torch.utils.data import DataLoader
 
-from .data.dataset import FineTuneDataset, TrainDataset, ValidDataset
-from .finetune.loss import SegmentationLoss
-from .finetune.model import LoRABiRefNet
-from .finetune.trainer import Trainer
-from .models.birefnet import BiRefNet
+from .ai.data.dataset import TrainDataset, ValidDataset
+from .ai.finetune.loss import CustomLoss
+from .ai.finetune.model import LoRABiRefNet
+from .ai.finetune.scheduler import CosineAnnealingWarmupRestarts
+from .ai.finetune.trainer import Trainer
+from .ai.models.birefnet import BiRefNet
 
 
-def build_pairs(
-    image_paths: list[str],
-    mask_paths: list[str],
-) -> list[tuple[str, str]]:
-    image_map: dict[str, str] = {}
-    for p in image_paths:
-        stem = Path(p).stem
-        if stem in image_map:
-            raise ValueError(f"Duplicate image stem detected: {stem}")
-        image_map[stem] = p
-
-    mask_map: dict[str, str] = {}
-    for p in mask_paths:
-        stem = Path(p).stem
-        if stem in mask_map:
-            raise ValueError(f"Duplicate mask stem detected: {stem}")
-        mask_map[stem] = p
-
-    if set(image_map) != set(mask_map):
-        raise ValueError(
-            "Image/mask filename mismatch: "
-            f"image_only={sorted(set(image_map) - set(mask_map))[:5]}, "
-            f"mask_only={sorted(set(mask_map) - set(image_map))[:5]}"
-        )
-
-    common_stems = sorted(image_map)
-    return [(image_map[s], mask_map[s]) for s in common_stems]
+def index_by_stem(paths: list[str]) -> dict[str, str]:
+    stem_to_path: dict[str, str] = {}
+    for path in paths:
+        stem = Path(path).stem
+        if stem in stem_to_path:
+            raise ValueError(f"Duplicate stem {stem!r}: {stem_to_path[stem]} vs {path}")
+        stem_to_path[stem] = path
+    return stem_to_path
 
 
-def build_dataloaders(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
-    image_dir = Path(cfg.data.img_dir)
-    mask_dir = Path(cfg.data.mask_dir)
+def build_dl(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
+    image_paths = glob(os.path.join(cfg.data.image_dir, "*"))
+    mask_paths = glob(os.path.join(cfg.data.mask_dir, "*"))
 
-    normalized_exts = {ext.lower() for ext in FineTuneDataset.EXTS}
-    image_files = [
-        str(file_path)
-        for file_path in sorted(image_dir.glob("*"))
-        if file_path.is_file() and file_path.suffix.lower() in normalized_exts
-    ]
-    mask_files = [
-        str(file_path)
-        for file_path in sorted(mask_dir.glob("*"))
-        if file_path.is_file() and file_path.suffix.lower() in normalized_exts
-    ]
+    i_dict = index_by_stem(image_paths)
+    m_dict = index_by_stem(mask_paths)
 
-    paired_paths = build_pairs(image_files, mask_files)
+    keys = set(i_dict.keys()) & set(m_dict.keys())
+    data = [(i_dict[key], m_dict[key]) for key in sorted(keys)]
 
     rng = random.Random(42)
-    rng.shuffle(paired_paths)
+    rng.shuffle(data)
 
     split_ratio = float(cfg.data.split_ratio)
-    num_valid = int(len(paired_paths) * split_ratio)
-    valid_pairs = paired_paths[:num_valid]
-    train_pairs = paired_paths[num_valid:]
-
-    train_images, train_masks = zip(*train_pairs) if train_pairs else ([], [])
-    valid_images, valid_masks = zip(*valid_pairs) if valid_pairs else ([], [])
+    num_valid = int(len(data) * split_ratio)
+    train_data = data[num_valid:]
+    valid_data = data[:num_valid]
 
     train_dataset = TrainDataset(
-        img_paths=list(train_images),
-        mask_paths=list(train_masks),
+        data=train_data,
         size=cfg.data.size,
+        scales=cfg.data.scales,
+        bc_weak=(cfg.augment.bc_weak.brightness, cfg.augment.bc_weak.contrast),
+        bc_strong=(cfg.augment.bc_strong.brightness, cfg.augment.bc_strong.contrast),
     )
     valid_dataset = ValidDataset(
-        img_paths=list(valid_images),
-        mask_paths=list(valid_masks),
+        data=valid_data,
         size=cfg.data.size,
+        scales=(1.0, 1.0),
     )
 
     train_loader = DataLoader(
         dataset=train_dataset,
-        batch_size=cfg.train.batch,
+        batch_size=cfg.dl.batch,
         shuffle=True,
-        num_workers=cfg.train.num_workers,
-        pin_memory=cfg.train.pin_memory,
+        num_workers=cfg.dl.num_workers,
+        pin_memory=cfg.dl.pin_memory,
         drop_last=True,
     )
     valid_loader = DataLoader(
         dataset=valid_dataset,
-        batch_size=cfg.train.batch,
+        batch_size=cfg.dl.batch,
         shuffle=False,
-        num_workers=cfg.train.num_workers,
-        pin_memory=cfg.train.pin_memory,
+        num_workers=cfg.dl.num_workers,
+        pin_memory=cfg.dl.pin_memory,
     )
 
     split_filenames = {
-        "train": [Path(path).name for path in train_images],
-        "valid": [Path(path).name for path in valid_images],
+        "train_image": [Path(image).name for image, _ in train_data],
+        "train_mask": [Path(mask).name for _, mask in train_data],
+        "valid_image": [Path(image).name for image, _ in valid_data],
+        "valid_mask": [Path(mask).name for _, mask in valid_data],
     }
 
     return train_loader, valid_loader, split_filenames
@@ -113,13 +90,14 @@ def build_birefnet(cfg: Any) -> BiRefNet:
         dec_ipt_split=cfg.birefnet.dec_ipt_split,
         ms_supervision=cfg.birefnet.ms_supervision,
         out_ref=cfg.birefnet.out_ref,
+        gradient_checkpointing=cfg.birefnet.gradient_checkpointing,
     )
 
     if cfg.birefnet.weight:
         checkpoint_path = cfg.birefnet.weight
         state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state)
-        print(f"[Checkpoint] loaded BiRefNet weights from: {checkpoint_path}")
+        print(f"[LOAD] {checkpoint_path}")
 
     return model
 
@@ -129,13 +107,14 @@ def build_lora_birefnet(
     model: torch.nn.Module,
     ckpt_path: str | None = None,
 ) -> LoRABiRefNet:
+    device = next(model.parameters()).device
     lora_model = LoRABiRefNet(model=model, rank=cfg.lora.rank, alpha=cfg.lora.alpha)
 
     if ckpt_path:
         lora_model.load_adapters(ckpt_path)
-        print(f"[Checkpoint] loaded LoRA adapters from: {ckpt_path}")
+        print(f"[LOAD] {ckpt_path}")
 
-    return lora_model
+    return lora_model.to(device)
 
 
 def build_trainer(
@@ -144,24 +123,33 @@ def build_trainer(
     train_dl: DataLoader,
     valid_dl: DataLoader,
 ) -> Trainer:
-    from .finetune.loss import ConsistencyLoss
+    criterion = CustomLoss(
+        lambda_bce=cfg.loss.lambda_bce,
+        lambda_iou=cfg.loss.lambda_iou,
+        lambda_kl=cfg.loss.lambda_kl,
+        lambda_aux=cfg.loss.lambda_aux,
+    )
 
-    device = next(model.parameters()).device
-    criterion = SegmentationLoss()
-    cons_criterion = ConsistencyLoss()
-    optimizer = torch.optim.AdamW(params=model.get_adapter_params(), lr=cfg.train.lr)
+    optimizer = torch.optim.AdamW(
+        params=model.get_adapter_params(),
+        lr=cfg.train.max_lr,
+    )
+
+    scheduler = CosineAnnealingWarmupRestarts(
+        optimizer=optimizer,
+        first_cycle_steps=cfg.train.steps,
+        max_lr=cfg.train.max_lr,
+        min_lr=cfg.train.min_lr,
+        warmup_steps=cfg.train.warmup_steps,
+    )
 
     return Trainer(
         model=model,
         train_loader=train_dl,
         valid_loader=valid_dl,
         criterion=criterion,
-        cons_criterion=cons_criterion,
         optimizer=optimizer,
-        device=device,
-        lambda_cons=cfg.train.lambda_cons,
+        scheduler=scheduler,
         max_grad_norm=cfg.train.max_grad_norm,
-        scheduler_name=cfg.train.scheduler,
-        warmup_steps=cfg.train.warmup_steps,
-        total_steps=cfg.train.steps,
+        accum_steps=cfg.train.accum_steps,
     )
