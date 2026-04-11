@@ -407,7 +407,6 @@ class SwinTransformer(nn.Module):
         norm_layer: nn.Module = nn.LayerNorm,
         patch_norm: bool = True,
         out_indices: tuple[int, ...] = (0, 1, 2, 3),
-        frozen_stages: int = -1,
         use_checkpoint: bool = False,
     ) -> None:
         super().__init__()
@@ -417,7 +416,6 @@ class SwinTransformer(nn.Module):
         self.embed_dim = embed_dim
         self.patch_norm = patch_norm
         self.out_indices = out_indices
-        self.frozen_stages = frozen_stages
 
         self.patch_embed = PatchEmbed(
             patch_size=patch_size,
@@ -456,22 +454,6 @@ class SwinTransformer(nn.Module):
             layer_name = f"norm{i_layer}"
             self.add_module(layer_name, layer)
 
-        self._freeze_stages()
-
-    def _freeze_stages(self) -> None:
-        if self.frozen_stages >= 0:
-            self.patch_embed.eval()
-            for param in self.patch_embed.parameters():
-                param.requires_grad = False
-
-        if self.frozen_stages >= 2:
-            self.pos_drop.eval()
-            for i in range(0, self.frozen_stages - 1):
-                m = self.layers[i]
-                m.eval()
-                for param in m.parameters():
-                    param.requires_grad = False
-
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
         x = self.patch_embed(x)
 
@@ -495,11 +477,6 @@ class SwinTransformer(nn.Module):
                 outs.append(out)
 
         return tuple(outs)
-
-    def train(self, mode: bool = True) -> "SwinTransformer":
-        super(SwinTransformer, self).train(mode)
-        self._freeze_stages()
-        return self
 
 
 def swin_v1_l(gradient_checkpointing: bool = False) -> SwinTransformer:
