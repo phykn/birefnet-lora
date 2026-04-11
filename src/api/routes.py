@@ -6,9 +6,20 @@ from imstr import decode, encode
 
 from src.ml.inference.predict import predict as run_predict
 
-from .schema import HealthResponse, PredictRequest, PredictResponse
+from .schema import HealthResponse, ImageData, PredictRequest, PredictResponse
 
 router = APIRouter()
+
+
+def _to_image_data(arr: np.ndarray) -> ImageData:
+    height, width = arr.shape[:2]
+    channels = arr.shape[2] if arr.ndim == 3 else None
+    return ImageData(
+        base64_str=encode(arr),
+        height=height,
+        width=width,
+        channels=channels,
+    )
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -19,7 +30,7 @@ async def health(request: Request) -> HealthResponse:
 @router.post("/predict", response_model=PredictResponse)
 async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     try:
-        image = decode(body.image)
+        image = decode(body.image.base64_str)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid image") from exc
 
@@ -36,4 +47,4 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     if want_prob_map:
         result = (result * 255).astype(np.uint8)
 
-    return PredictResponse(mask=encode(result))
+    return PredictResponse(mask=_to_image_data(result))

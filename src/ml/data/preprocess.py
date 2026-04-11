@@ -6,9 +6,9 @@ from sdimg.image import to_gray, zscore_norm, clahe_norm
 
 def _norm(gray: np.ndarray) -> np.ndarray:
     x = zscore_norm(gray, std_range=3.0)
-    x = clahe_norm(x, clip_limit=2.0, tile_grid_size=(8, 8))
+    x = clahe_norm(x, clipLimit=2.0, tileGridSize=(8, 8))
     x = zscore_norm(x, std_range=3.0)
-    x = clahe_norm(x, clip_limit=2.0, tile_grid_size=(8, 8))
+    x = clahe_norm(x, clipLimit=2.0, tileGridSize=(8, 8))
     return x
 
 

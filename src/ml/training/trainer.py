@@ -33,7 +33,7 @@ class Trainer:
         self.device = next(model.parameters()).device
 
         self.use_amp = self.device.type == "cuda"
-        if self.use_amp and torch.cuda.is_bf16_supported():
+        if self.use_amp and torch.cuda.is_bf16_supported(including_emulation=False):
             self.amp_dtype = torch.bfloat16
         else:
             self.amp_dtype = torch.float16

@@ -1,3 +1,5 @@
+import contextlib
+
 import cv2
 import numpy as np
 import torch
@@ -27,7 +29,18 @@ def predict(
     x = np.transpose(x, (2, 0, 1))[None]
     x = torch.from_numpy(x).to(device)
 
-    logits = model(x).preds[-1]
+    if device.type == "cuda":
+        dtype = (
+            torch.bfloat16
+            if torch.cuda.is_bf16_supported(including_emulation=False)
+            else torch.float16
+        )
+        autocast_ctx = torch.amp.autocast("cuda", dtype=dtype)
+    else:
+        autocast_ctx = contextlib.nullcontext()
+
+    with autocast_ctx:
+        logits = model(x).preds[-1]
     logits = torch.nn.functional.interpolate(
         logits, size=(h, w), mode="bilinear", align_corners=True
     )

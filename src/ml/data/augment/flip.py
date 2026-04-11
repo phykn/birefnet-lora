@@ -1,9 +1,7 @@
 import numpy as np
 
 
-def random_flip(
-    image: np.ndarray, mask: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+def random_flip(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Apply a random element of the D4 dihedral group to (image, mask).
 
     The eight group elements are indexed by (rot_k in 0..3, hflip in 0..1).
