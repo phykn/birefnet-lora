@@ -51,11 +51,13 @@ def test_symmetric_binary_kl_positive_for_different_logits():
     assert SymmetricBinaryKLLoss()(logits_1, logits_2).item() > 0
 
 
-def test_symmetric_binary_kl_resizes_second():
+def test_symmetric_binary_kl_asserts_on_shape_mismatch():
+    import pytest
+
     logits_1 = torch.randn(2, 1, 32, 32)
     logits_2 = torch.randn(2, 1, 16, 16)
-    out = SymmetricBinaryKLLoss()(logits_1, logits_2)
-    assert out.dim() == 0
+    with pytest.raises(AssertionError, match="matching shapes"):
+        SymmetricBinaryKLLoss()(logits_1, logits_2)
 
 
 class _TrainModel(nn.Module):

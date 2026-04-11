@@ -5,12 +5,6 @@ import torch.nn.functional as F
 from src.ml.model.lora.wrapper import ModelOutput
 
 
-def _match_size(src: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
-    if src.shape[2:] == ref.shape[2:]:
-        return src
-    return F.interpolate(src, size=ref.shape[2:], mode="bilinear", align_corners=False)
-
-
 class IoULoss(nn.Module):
     """Expects `pred` to be probabilities in [0, 1] (already sigmoid'd)."""
 
@@ -51,7 +45,10 @@ class SymmetricBinaryKLLoss(nn.Module):
         return p * (log_p - log_q) + (1 - p) * (log_1mp - log_1mq)
 
     def forward(self, logits_1: torch.Tensor, logits_2: torch.Tensor) -> torch.Tensor:
-        logits_2 = _match_size(logits_2, logits_1)
+        assert logits_1.shape == logits_2.shape, (
+            f"SymmetricBinaryKLLoss expects matching shapes, got "
+            f"{tuple(logits_1.shape)} vs {tuple(logits_2.shape)}"
+        )
         kl = self._binary_kl(logits_1, logits_2) + self._binary_kl(logits_2, logits_1)
         return self.lambda_kl * 0.5 * kl.mean()
 
