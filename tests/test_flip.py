@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.ai.data.augment.flip import (
+from src.ml.data.augment.flip import (
     Compose,
     HorizontalFlip,
     Identity,

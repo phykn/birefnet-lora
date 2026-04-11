@@ -7,12 +7,12 @@ import torch
 from glob import glob
 from torch.utils.data import DataLoader
 
-from .ai.data.dataset import TrainDataset, ValidDataset
-from .ai.finetune.loss import CustomLoss
-from .ai.finetune.model import LoRABiRefNet
-from .ai.finetune.scheduler import CosineAnnealingWarmupRestarts
-from .ai.finetune.trainer import Trainer
-from .ai.models.birefnet import BiRefNet
+from .data.dataset import TrainDataset, ValidDataset
+from .model.birefnet.birefnet import BiRefNet
+from .model.lora.wrapper import LoRABiRefNet
+from .training.loss import CustomLoss
+from .training.scheduler import CosineAnnealingWarmupRestarts
+from .training.trainer import Trainer
 
 
 def index_by_stem(paths: list[str]) -> dict[str, str]:

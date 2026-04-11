@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from src.ai.finetune.scheduler import CosineAnnealingWarmupRestarts
-from src.ai.finetune.trainer import Trainer
+from src.ml.training.scheduler import CosineAnnealingWarmupRestarts
+from src.ml.training.trainer import Trainer
 
 
 class _DummyModel(nn.Module):

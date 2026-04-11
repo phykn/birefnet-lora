@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.ai.finetune.loss import (
+from src.ml.training.loss import (
     SymmetricBinaryKLLoss,
     CustomLoss,
     IoULoss,

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.ai.finetune.adapters import (
+from src.ml.model.lora.adapters import (
     LoRAConv2d,
     LoRALinear,
     apply_conv2d,

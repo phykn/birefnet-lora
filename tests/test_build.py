@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("imrw")
 pytest.importorskip("sdimg")
 
-from src.build import index_by_stem  # noqa: E402
+from src.ml.build import index_by_stem  # noqa: E402
 
 
 def test_index_by_stem_maps_stem_to_path():

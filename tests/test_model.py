@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from src.ai.finetune.adapters import LoRAConv2d, LoRALinear, apply_linear
-from src.ai.finetune.model import LoRABiRefNet
-from src.ai.models.backbones.swin_v1 import BasicLayer
+from src.ml.model.birefnet.backbones.swin_v1 import BasicLayer
+from src.ml.model.lora.adapters import LoRAConv2d, LoRALinear, apply_linear
+from src.ml.model.lora.wrapper import LoRABiRefNet
 
 
 class _Decoder(nn.Module):

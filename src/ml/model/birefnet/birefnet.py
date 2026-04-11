@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from einops import rearrange
 from kornia.filters import laplacian
 
-from .backbones.build_backbone import build_backbone
-from .modules.decoder_blocks import BasicDecBlk
-from .modules.lateral_blocks import BasicLatBlk
+from .backbones.build import build_backbone
+from .blocks.decoder import BasicDecBlk
+from .blocks.lateral import BasicLatBlk
 
 GDT_INTER_CHANNELS = 16
 

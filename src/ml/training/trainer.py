@@ -32,7 +32,14 @@ class Trainer:
         self.device = next(model.parameters()).device
 
         self.use_amp = self.device.type == "cuda"
-        self.amp_dtype = torch.bfloat16
+        if self.use_amp and torch.cuda.is_bf16_supported():
+            self.amp_dtype = torch.bfloat16
+        else:
+            self.amp_dtype = torch.float16
+        # GradScaler is only needed for fp16; bf16 has fp32-equivalent range.
+        self.scaler = torch.amp.GradScaler(
+            self.device.type, enabled=self.use_amp and self.amp_dtype == torch.float16
+        )
 
         run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.save_dir = os.path.join("run", run_timestamp)
@@ -60,12 +67,14 @@ class Trainer:
                 self.device.type, dtype=self.amp_dtype, enabled=self.use_amp
             ):
                 loss_dict, loss = self.criterion(self.model, batch)
-            (loss / self.accum_steps).backward()
+            self.scaler.scale(loss / self.accum_steps).backward()
             for k, v in loss_dict.items():
                 accum[k] = accum.get(k, 0.0) + v.item() / self.accum_steps
 
+        self.scaler.unscale_(self.optimizer)
         nn.utils.clip_grad_norm_(self.model.get_adapter_params(), self.max_grad_norm)
-        self.optimizer.step()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
         self.scheduler.step()
 
         return accum

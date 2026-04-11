@@ -1,6 +1,6 @@
 import torch
 
-from src.ai.finetune.scheduler import CosineAnnealingWarmupRestarts
+from src.ml.training.scheduler import CosineAnnealingWarmupRestarts
 
 
 def _make(max_lr=1.0, min_lr=0.0, warmup=5, total=20):

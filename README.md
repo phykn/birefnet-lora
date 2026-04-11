@@ -42,10 +42,12 @@ Optional smoke test:
 
 ## Project Layout
 - `run_train.py`: training entrypoint.
-- `src/build.py`: factory functions for model, data, trainer.
-- `src/ai/models/`: BiRefNet architecture and backbones.
-- `src/ai/finetune/`: LoRA adapters, loss, scheduler, and trainer.
-- `src/ai/data/`: datasets, augmentations, and preprocessing.
+- `src/ml/build.py`: factory functions for model, data, trainer.
+- `src/ml/model/birefnet/`: BiRefNet architecture (backbones, blocks).
+- `src/ml/model/lora/`: LoRA adapters and `LoRABiRefNet` wrapper.
+- `src/ml/training/`: trainer, loss, and scheduler.
+- `src/ml/data/`: datasets, augmentations, and preprocessing.
+- `src/ml/inference/`: prediction entry point.
 - `src/config/`: `tune.yaml` (runtime) and `model.yaml` (architecture + LoRA).
 - `src/utils/io.py`: YAML load/save helpers (OmegaConf).
 
