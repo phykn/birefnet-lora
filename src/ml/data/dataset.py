@@ -107,4 +107,3 @@ class Dataset:
             brightness=random.uniform(-b, b),
             contrast=random.uniform(-c, c),
         )
-

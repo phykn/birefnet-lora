@@ -38,7 +38,8 @@ class _FakeBiRefNet(nn.Module):
 def test_lora_birefnet_freezes_base_and_marks_adapters_trainable():
     lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
     base_trainable = [
-        p for n, p in lora.named_parameters()
+        p
+        for n, p in lora.named_parameters()
         if p.requires_grad and ".down." not in n and ".up." not in n
     ]
     assert base_trainable == []
@@ -84,7 +85,9 @@ def test_save_and_load_adapters_round_trip(tmp_path):
     lora.save_adapters(str(path))
     assert path.exists()
 
-    saved_state = {n: p.detach().clone() for n, p in lora.named_parameters() if p.requires_grad}
+    saved_state = {
+        n: p.detach().clone() for n, p in lora.named_parameters() if p.requires_grad
+    }
 
     fresh = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
     fresh.load_adapters(str(path))

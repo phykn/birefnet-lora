@@ -70,7 +70,9 @@ class _TrainModel(nn.Module):
 
         pred = self.conv(x)
         if self.training:
-            return ModelOutput(preds=[pred, pred], aux=torch.tensor(0.5, device=x.device))
+            return ModelOutput(
+                preds=[pred, pred], aux=torch.tensor(0.5, device=x.device)
+            )
         return ModelOutput(preds=[pred], aux=None)
 
 

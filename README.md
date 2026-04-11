@@ -49,7 +49,6 @@ Optional smoke test:
 - `src/ml/data/`: datasets, augmentations, and preprocessing.
 - `src/ml/inference/`: prediction entry point.
 - `src/config/`: `tune.yaml` (runtime) and `model.yaml` (architecture + LoRA).
-- `src/utils/io.py`: YAML load/save helpers (OmegaConf).
 
 ## Reference
 - [BiRefNet official repository](https://github.com/ZhengPeng7/BiRefNet)

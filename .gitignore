@@ -14,5 +14,6 @@ weight/
 run/
 
 # Local operational docs
+docs
 .claude/
 CLAUDE.md

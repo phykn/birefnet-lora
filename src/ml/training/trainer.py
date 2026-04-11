@@ -110,9 +110,7 @@ class Trainer:
 
         for global_step in progress_bar:
             losses = self.step()
-            progress_bar.set_postfix(
-                {k: f"{v:.4f}" for k, v in losses.items()}
-            )
+            progress_bar.set_postfix({k: f"{v:.4f}" for k, v in losses.items()})
 
             for k, v in losses.items():
                 self.writer.add_scalar(f"Train/{k.capitalize()}", v, global_step)
