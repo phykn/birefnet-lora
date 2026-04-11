@@ -5,7 +5,6 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from src.ml.build import build_birefnet, build_dl, build_lora_birefnet, build_trainer
-from src.utils.io import load_yaml, save_yaml
 
 
 CYAN = "\033[36m"
@@ -104,8 +103,8 @@ def print_run_info(
 
 def main() -> None:
     cfg = OmegaConf.merge(
-        load_yaml("src/config/tune.yaml"),
-        load_yaml("src/config/model.yaml"),
+        OmegaConf.load("src/config/tune.yaml"),
+        OmegaConf.load("src/config/model.yaml"),
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -122,7 +121,7 @@ def main() -> None:
     )
 
     print_run_info(cfg=cfg, split_filenames=split_filenames, model=model)
-    save_yaml(cfg=cfg, path=f"{trainer.save_dir}/config.yaml")
+    OmegaConf.save(cfg, f"{trainer.save_dir}/config.yaml")
     save_split_csv(split_filenames=split_filenames, output_dir=trainer.save_dir)
 
     trainer.train(
