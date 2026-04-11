@@ -71,10 +71,11 @@ class CosineAnnealingWarmupRestarts(_LRScheduler):
         ]
 
     def step(self, epoch=None):
-        assert epoch is None, (
-            "CosineAnnealingWarmupRestarts does not support epoch-resume; "
-            "call step() without arguments."
-        )
+        if epoch is not None:
+            raise TypeError(
+                "CosineAnnealingWarmupRestarts does not support epoch-resume; "
+                "call step() without arguments."
+            )
         self.last_epoch += 1
         self.step_in_cycle += 1
         if self.step_in_cycle >= self.cur_cycle_steps:
