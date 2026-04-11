@@ -56,40 +56,31 @@ class Decoder(nn.Module):
     def __init__(
         self,
         channels: list[int],
-        dec_ipt: bool = True,
-        dec_ipt_split: bool = True,
         ms_supervision: bool = True,
         out_ref: bool = True,
     ) -> None:
         super().__init__()
-        self.dec_ipt = dec_ipt
         self.ms_supervision = ms_supervision
         self.out_ref = out_ref
 
-        if dec_ipt:
-            self.split = dec_ipt_split
-            ipt_blk_in_channels = (
-                [3072, 768, 192, 48, 3] if dec_ipt_split else [3, 3, 3, 3, 3]
-            )
-            ipt_blk_out_channels = [channels[i] // 8 for i in range(4)]
+        ipt_blk_in_channels = [3072, 768, 192, 48, 3]
+        ipt_blk_out_channels = [channels[i] // 8 for i in range(4)]
 
-            self.ipt_blk5 = SimpleConvs(
-                ipt_blk_in_channels[0], ipt_blk_out_channels[0], inter_channels=64
-            )
-            self.ipt_blk4 = SimpleConvs(
-                ipt_blk_in_channels[1], ipt_blk_out_channels[0], inter_channels=64
-            )
-            self.ipt_blk3 = SimpleConvs(
-                ipt_blk_in_channels[2], ipt_blk_out_channels[1], inter_channels=64
-            )
-            self.ipt_blk2 = SimpleConvs(
-                ipt_blk_in_channels[3], ipt_blk_out_channels[2], inter_channels=64
-            )
-            self.ipt_blk1 = SimpleConvs(
-                ipt_blk_in_channels[4], ipt_blk_out_channels[3], inter_channels=64
-            )
-        else:
-            self.split = None
+        self.ipt_blk5 = SimpleConvs(
+            ipt_blk_in_channels[0], ipt_blk_out_channels[0], inter_channels=64
+        )
+        self.ipt_blk4 = SimpleConvs(
+            ipt_blk_in_channels[1], ipt_blk_out_channels[0], inter_channels=64
+        )
+        self.ipt_blk3 = SimpleConvs(
+            ipt_blk_in_channels[2], ipt_blk_out_channels[1], inter_channels=64
+        )
+        self.ipt_blk2 = SimpleConvs(
+            ipt_blk_in_channels[3], ipt_blk_out_channels[2], inter_channels=64
+        )
+        self.ipt_blk1 = SimpleConvs(
+            ipt_blk_in_channels[4], ipt_blk_out_channels[3], inter_channels=64
+        )
 
         bb_neck_out_channels = channels.copy()
 
@@ -97,13 +88,10 @@ class Decoder(nn.Module):
             bb_neck_out_channels[-1] // 2
         ]
 
-        if dec_ipt:
-            dec_blk_in_channels = [
-                bb_neck_out_channels[i] + ipt_blk_out_channels[max(0, i - 1)]
-                for i in range(len(bb_neck_out_channels))
-            ]
-        else:
-            dec_blk_in_channels = bb_neck_out_channels.copy()
+        dec_blk_in_channels = [
+            bb_neck_out_channels[i] + ipt_blk_out_channels[max(0, i - 1)]
+            for i in range(len(bb_neck_out_channels))
+        ]
 
         self.decoder_block4 = BasicDecBlk(
             dec_blk_in_channels[0], dec_blk_out_channels[0]
@@ -118,9 +106,7 @@ class Decoder(nn.Module):
             dec_blk_in_channels[3], dec_blk_out_channels[3]
         )
 
-        conv_out1_in_channels = dec_blk_out_channels[3] + (
-            ipt_blk_out_channels[3] if dec_ipt else 0
-        )
+        conv_out1_in_channels = dec_blk_out_channels[3] + ipt_blk_out_channels[3]
         self.conv_out1 = nn.Sequential(nn.Conv2d(conv_out1_in_channels, 1, 1))
 
         self.lateral_block4 = BasicLatBlk(
@@ -193,25 +179,20 @@ class Decoder(nn.Module):
 
         outs = []
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=x4,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=x4,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk5(
+            F.interpolate(
+                patches_batch,
+                size=x4.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk5(
-                F.interpolate(
-                    patches_batch,
-                    size=x4.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            x4 = torch.cat((x4, _patched), dim=1)
+        )
+        x4 = torch.cat((x4, _patched), dim=1)
 
         p4 = self.decoder_block4(x4)
         m4 = self.conv_ms_spvn_4(p4) if self.ms_supervision and self.training else None
@@ -240,25 +221,20 @@ class Decoder(nn.Module):
         )
         _p3 = _p4 + self.lateral_block4(x3)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p3,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p3,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk4(
+            F.interpolate(
+                patches_batch,
+                size=x3.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk4(
-                F.interpolate(
-                    patches_batch,
-                    size=x3.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p3 = torch.cat((_p3, _patched), dim=1)
+        )
+        _p3 = torch.cat((_p3, _patched), dim=1)
 
         p3 = self.decoder_block3(_p3)
         m3 = self.conv_ms_spvn_3(p3) if self.ms_supervision and self.training else None
@@ -287,25 +263,20 @@ class Decoder(nn.Module):
         )
         _p2 = _p3 + self.lateral_block3(x2)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p2,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p2,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk3(
+            F.interpolate(
+                patches_batch,
+                size=x2.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk3(
-                F.interpolate(
-                    patches_batch,
-                    size=x2.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p2 = torch.cat((_p2, _patched), dim=1)
+        )
+        _p2 = torch.cat((_p2, _patched), dim=1)
 
         p2 = self.decoder_block2(_p2)
         m2 = self.conv_ms_spvn_2(p2) if self.ms_supervision and self.training else None
@@ -334,25 +305,20 @@ class Decoder(nn.Module):
         )
         _p1 = _p2 + self.lateral_block2(x1)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p1,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p1,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk2(
+            F.interpolate(
+                patches_batch,
+                size=x1.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk2(
-                F.interpolate(
-                    patches_batch,
-                    size=x1.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p1 = torch.cat((_p1, _patched), dim=1)
+        )
+        _p1 = torch.cat((_p1, _patched), dim=1)
 
         _p1 = self.decoder_block1(_p1)
         _p1 = F.interpolate(
@@ -362,25 +328,20 @@ class Decoder(nn.Module):
             align_corners=True,
         )
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p1,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p1,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk1(
+            F.interpolate(
+                patches_batch,
+                size=x.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk1(
-                F.interpolate(
-                    patches_batch,
-                    size=x.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p1 = torch.cat((_p1, _patched), dim=1)
+        )
+        _p1 = torch.cat((_p1, _patched), dim=1)
 
         p1_out = self.conv_out1(_p1)
 
@@ -400,8 +361,6 @@ class BiRefNet(nn.Module):
     def __init__(
         self,
         lateral_channels_in_collection: list[int] = [1536, 768, 384, 192],
-        dec_ipt: bool = True,
-        dec_ipt_split: bool = True,
         ms_supervision: bool = True,
         out_ref: bool = True,
         gradient_checkpointing: bool = False,
@@ -425,8 +384,6 @@ class BiRefNet(nn.Module):
 
         self.decoder = Decoder(
             channels=channels,
-            dec_ipt=dec_ipt,
-            dec_ipt_split=dec_ipt_split,
             ms_supervision=ms_supervision,
             out_ref=out_ref,
         )

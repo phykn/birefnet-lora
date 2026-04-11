@@ -1,8 +1,6 @@
 birefnet:
   weight: "weight/BiRefNet-general-epoch_244.pth"
   lateral_channels_in_collection: [1536, 768, 384, 192]
-  dec_ipt: True
-  dec_ipt_split: True
   ms_supervision: True
   out_ref: True
   gradient_checkpointing: True
