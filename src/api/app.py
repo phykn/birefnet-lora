@@ -13,6 +13,12 @@ from .routes import health, predict
 MAX_CONCURRENT_PREDICTIONS = 2
 
 
+def _install_state(app: FastAPI, model, device: torch.device) -> None:
+    app.state.model = model
+    app.state.device = device
+    app.state.predict_sem = asyncio.Semaphore(MAX_CONCURRENT_PREDICTIONS)
+
+
 def _register_routes(app: FastAPI) -> None:
     app.include_router(health.router)
     app.include_router(predict.router)
@@ -20,9 +26,7 @@ def _register_routes(app: FastAPI) -> None:
 
 def create_app(model, device: torch.device) -> FastAPI:
     app = FastAPI(title="BiRefNet-LoRA Inference API")
-    app.state.model = model
-    app.state.device = device
-    app.state.predict_sem = asyncio.Semaphore(MAX_CONCURRENT_PREDICTIONS)
+    _install_state(app, model, device)
     _register_routes(app)
     return app
 
@@ -44,9 +48,7 @@ async def lifespan(app: FastAPI):
     )
     model.eval()
 
-    app.state.model = model
-    app.state.device = device
-    app.state.predict_sem = asyncio.Semaphore(MAX_CONCURRENT_PREDICTIONS)
+    _install_state(app, model, device)
     yield
 
 
