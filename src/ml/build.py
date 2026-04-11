@@ -7,7 +7,7 @@ import torch
 from glob import glob
 from torch.utils.data import DataLoader
 
-from .data.dataset import TrainDataset, ValidDataset
+from .data.dataset import Dataset
 from .model.birefnet.birefnet import BiRefNet
 from .model.lora.wrapper import LoRABiRefNet
 from .training.loss import CustomLoss
@@ -43,17 +43,18 @@ def build_dl(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
     train_data = data[num_valid:]
     valid_data = data[:num_valid]
 
-    train_dataset = TrainDataset(
+    train_dataset = Dataset(
         data=train_data,
         size=cfg.data.size,
         scales=cfg.data.scales,
+        train=True,
         bc_weak=(cfg.augment.bc_weak.brightness, cfg.augment.bc_weak.contrast),
         bc_strong=(cfg.augment.bc_strong.brightness, cfg.augment.bc_strong.contrast),
     )
-    valid_dataset = ValidDataset(
+    valid_dataset = Dataset(
         data=valid_data,
         size=cfg.data.size,
-        scales=(1.0, 1.0),
+        train=False,
     )
 
     train_loader = DataLoader(

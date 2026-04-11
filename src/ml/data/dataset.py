@@ -108,12 +108,3 @@ class Dataset:
             contrast=random.uniform(-c, c),
         )
 
-
-class TrainDataset(Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, train=True)
-
-
-class ValidDataset(Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, train=False)
