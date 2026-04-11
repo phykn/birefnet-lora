@@ -1,20 +1,15 @@
 import numpy as np
 import torch
-from fastapi.testclient import TestClient
 from imstr import decode, encode
 
-from src.api.app import create_app
+PREDICT_TARGET = "src.api.routes.run_predict"
 
 
-def _make_client(monkeypatch, fake_predict):
-    monkeypatch.setattr(
-        "src.api.routes.predict.predict", fake_predict, raising=True
-    )
-    app = create_app(model=object(), device=torch.device("cpu"))
-    return TestClient(app)
+def _patch_predict(monkeypatch, fake):
+    monkeypatch.setattr(PREDICT_TARGET, fake, raising=True)
 
 
-def test_predict_binary_mask_default_threshold(monkeypatch):
+def test_predict_binary_mask_default_threshold(monkeypatch, api_client):
     captured = {}
 
     def fake_predict(model, image, threshold=0.5):
@@ -22,7 +17,8 @@ def test_predict_binary_mask_default_threshold(monkeypatch):
         captured["shape"] = image.shape
         return np.full(image.shape[:2], 255, dtype=np.uint8)
 
-    client = _make_client(monkeypatch, fake_predict)
+    _patch_predict(monkeypatch, fake_predict)
+    client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.random.randint(0, 255, (16, 24, 3), dtype=np.uint8)
     response = client.post("/predict", json={"image": encode(img)})
@@ -36,13 +32,11 @@ def test_predict_binary_mask_default_threshold(monkeypatch):
     assert captured["shape"] == (16, 24, 3)
 
 
-def test_predict_releases_cuda_cache_on_cuda_device(monkeypatch):
+def test_predict_releases_cuda_cache_on_cuda_device(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         return np.zeros(image.shape[:2], dtype=np.uint8)
 
-    monkeypatch.setattr(
-        "src.api.routes.predict.predict", fake_predict, raising=True
-    )
+    _patch_predict(monkeypatch, fake_predict)
 
     calls = {"empty_cache": 0}
 
@@ -51,9 +45,7 @@ def test_predict_releases_cuda_cache_on_cuda_device(monkeypatch):
 
     monkeypatch.setattr(torch.cuda, "empty_cache", fake_empty_cache)
 
-    # torch.device("cuda") is just a marker — we never touch real CUDA
-    app = create_app(model=object(), device=torch.device("cuda"))
-    client = TestClient(app)
+    client = api_client(model=object(), device=torch.device("cuda"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
     response = client.post("/predict", json={"image": encode(img)})
@@ -62,13 +54,11 @@ def test_predict_releases_cuda_cache_on_cuda_device(monkeypatch):
     assert calls["empty_cache"] == 1
 
 
-def test_predict_skips_empty_cache_on_cpu_device(monkeypatch):
+def test_predict_skips_empty_cache_on_cpu_device(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         return np.zeros(image.shape[:2], dtype=np.uint8)
 
-    monkeypatch.setattr(
-        "src.api.routes.predict.predict", fake_predict, raising=True
-    )
+    _patch_predict(monkeypatch, fake_predict)
 
     calls = {"empty_cache": 0}
 
@@ -77,8 +67,7 @@ def test_predict_skips_empty_cache_on_cpu_device(monkeypatch):
 
     monkeypatch.setattr(torch.cuda, "empty_cache", fake_empty_cache)
 
-    app = create_app(model=object(), device=torch.device("cpu"))
-    client = TestClient(app)
+    client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
     response = client.post("/predict", json={"image": encode(img)})
@@ -87,12 +76,13 @@ def test_predict_skips_empty_cache_on_cpu_device(monkeypatch):
     assert calls["empty_cache"] == 0
 
 
-def test_predict_probability_map_when_threshold_negative(monkeypatch):
+def test_predict_probability_map_when_threshold_negative(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         assert threshold is None
         return np.full(image.shape[:2], 0.5, dtype=np.float32)
 
-    client = _make_client(monkeypatch, fake_predict)
+    _patch_predict(monkeypatch, fake_predict)
+    client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((8, 8, 3), dtype=np.uint8)
     response = client.post(
@@ -102,16 +92,16 @@ def test_predict_probability_map_when_threshold_negative(monkeypatch):
     assert response.status_code == 200
     mask = decode(response.json()["mask"])
     assert mask.dtype == np.uint8
-    # 0.5 * 255 -> 127 (astype truncation)
     assert mask.shape[:2] == (8, 8)
     assert (mask == 127).all()
 
 
-def test_predict_rejects_invalid_image(monkeypatch):
+def test_predict_rejects_invalid_image(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         raise AssertionError("predict should not be called on invalid input")
 
-    client = _make_client(monkeypatch, fake_predict)
+    _patch_predict(monkeypatch, fake_predict)
+    client = api_client(model=object(), device=torch.device("cpu"))
 
     response = client.post("/predict", json={"image": "not-a-real-imstr"})
 
@@ -119,11 +109,12 @@ def test_predict_rejects_invalid_image(monkeypatch):
     assert response.json() == {"detail": "invalid image"}
 
 
-def test_predict_rejects_threshold_out_of_range(monkeypatch):
+def test_predict_rejects_threshold_out_of_range(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         raise AssertionError("should not reach predict")
 
-    client = _make_client(monkeypatch, fake_predict)
+    _patch_predict(monkeypatch, fake_predict)
+    client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
     response = client.post(

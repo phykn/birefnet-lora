@@ -1,12 +1,8 @@
 import torch
-from fastapi.testclient import TestClient
-
-from src.api.app import create_app
 
 
-def test_health_returns_ok_and_device():
-    app = create_app(model=None, device=torch.device("cpu"))
-    client = TestClient(app)
+def test_health_returns_ok_and_device(api_client):
+    client = api_client(model=None, device=torch.device("cpu"))
 
     response = client.get("/health")
 

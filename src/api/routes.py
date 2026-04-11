@@ -4,32 +4,36 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from imstr import decode, encode
 
-from src.ml.inference.predict import predict
+from src.ml.inference.predict import predict as run_predict
 
-from ..schema import PredictRequest, PredictResponse
+from .schema import HealthResponse, PredictRequest, PredictResponse
 
 router = APIRouter()
 
 
+@router.get("/health", response_model=HealthResponse)
+async def health(request: Request) -> HealthResponse:
+    return HealthResponse(status="ok", device=request.app.state.device.type)
+
+
 @router.post("/predict", response_model=PredictResponse)
-async def predict_endpoint(
-    request: Request, body: PredictRequest
-) -> PredictResponse:
+async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     try:
         image = decode(body.image)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid image") from exc
 
-    threshold: float | None = None if body.threshold < 0 else body.threshold
+    want_prob_map = body.threshold < 0
+    threshold = None if want_prob_map else body.threshold
 
     async with request.app.state.predict_sem:
         result = await run_in_threadpool(
-            predict, request.app.state.model, image, threshold=threshold
+            run_predict, request.app.state.model, image, threshold=threshold
         )
         if request.app.state.device.type == "cuda":
             torch.cuda.empty_cache()
 
-    if threshold is None:
+    if want_prob_map:
         result = (result * 255).astype(np.uint8)
 
     return PredictResponse(mask=encode(result))
