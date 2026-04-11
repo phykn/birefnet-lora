@@ -100,5 +100,5 @@ def test_custom_loss_eval_mode_returns_seg_only():
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
     }
     loss_dict, loss = CustomLoss()(model, batch)
-    assert set(loss_dict.keys()) == {"loss", "seg"}
+    assert set(loss_dict.keys()) == {"seg"}
     assert torch.isclose(loss, loss_dict["seg"])

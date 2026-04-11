@@ -98,4 +98,4 @@ class CustomLoss(nn.Module):
         out = model(image_1)
         pred = out.preds[-1]
         seg_loss = self.seg(pred, mask)
-        return {"loss": seg_loss, "seg": seg_loss}, seg_loss
+        return {"seg": seg_loss}, seg_loss
