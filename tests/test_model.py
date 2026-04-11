@@ -114,7 +114,6 @@ def test_checkpointed_basic_layer_propagates_grad_to_lora_with_frozen_input():
         drop_path=0.0,
         downsample=None,
         use_checkpoint=True,
-        sdpa_enabled=False,
     )
     for p in layer.parameters():
         p.requires_grad = False
