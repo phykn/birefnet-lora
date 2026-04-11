@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 import torch
 import torch.nn as nn
@@ -18,6 +17,7 @@ class Trainer:
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: CosineAnnealingWarmupRestarts,
+        save_dir: str,
         max_grad_norm: float = 1.0,
         accum_steps: int = 1,
     ) -> None:
@@ -27,6 +27,7 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.save_dir = save_dir
         self.max_grad_norm = max_grad_norm
         self.accum_steps = accum_steps
         self.device = next(model.parameters()).device
@@ -41,20 +42,17 @@ class Trainer:
             self.device.type, enabled=self.use_amp and self.amp_dtype == torch.float16
         )
 
-        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_dir = os.path.join("run", run_timestamp)
-        os.makedirs(self.save_dir, exist_ok=True)
-
-        log_dir = os.path.join(self.save_dir, "logs")
-        self.writer = SummaryWriter(log_dir=log_dir)
-        self.train_iter = iter(self.train_loader)
+        self._writer: SummaryWriter | None = None
+        self._train_iter = None
 
     def get_batch(self) -> dict[str, torch.Tensor]:
+        if self._train_iter is None:
+            self._train_iter = iter(self.train_loader)
         try:
-            return next(self.train_iter)
+            return next(self._train_iter)
         except StopIteration:
-            self.train_iter = iter(self.train_loader)
-            return next(self.train_iter)
+            self._train_iter = iter(self.train_loader)
+            return next(self._train_iter)
 
     def step(self) -> dict[str, float]:
         self.model.train()
@@ -106,6 +104,8 @@ class Trainer:
         val_freq: int = 500,
         save_freq: int = 1000,
     ) -> None:
+        log_dir = os.path.join(self.save_dir, "logs")
+        self._writer = SummaryWriter(log_dir=log_dir)
         progress_bar = tqdm(range(1, steps + 1), desc="Training")
 
         for global_step in progress_bar:
@@ -113,19 +113,19 @@ class Trainer:
             progress_bar.set_postfix({k: f"{v:.4f}" for k, v in losses.items()})
 
             for k, v in losses.items():
-                self.writer.add_scalar(f"Train/{k.capitalize()}", v, global_step)
-            self.writer.add_scalar(
+                self._writer.add_scalar(f"Train/{k.capitalize()}", v, global_step)
+            self._writer.add_scalar(
                 "Train/LR", self.scheduler.get_last_lr()[0], global_step
             )
 
             if global_step % val_freq == 0:
                 valid_losses = self.validate()
                 for k, v in valid_losses.items():
-                    self.writer.add_scalar(f"Val/{k.capitalize()}", v, global_step)
+                    self._writer.add_scalar(f"Val/{k.capitalize()}", v, global_step)
 
             if global_step % save_freq == 0:
                 self.save()
 
         self.save()
-        self.writer.flush()
-        self.writer.close()
+        self._writer.flush()
+        self._writer.close()

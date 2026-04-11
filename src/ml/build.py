@@ -1,5 +1,6 @@
 import os
 import random
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -151,6 +152,10 @@ def build_trainer(
         warmup_steps=cfg.train.warmup_steps,
     )
 
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_dir = os.path.join("run", run_timestamp)
+    os.makedirs(save_dir, exist_ok=True)
+
     return Trainer(
         model=model,
         train_loader=train_dl,
@@ -158,6 +163,7 @@ def build_trainer(
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
+        save_dir=save_dir,
         max_grad_norm=cfg.train.max_grad_norm,
         accum_steps=cfg.train.accum_steps,
     )

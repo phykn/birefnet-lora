@@ -62,8 +62,7 @@ class _DummyDataset(Dataset):
         }
 
 
-def _make_trainer(tmp_path, monkeypatch, accum_steps=1):
-    monkeypatch.chdir(tmp_path)
+def _make_trainer(tmp_path, accum_steps=1):
     model = _DummyModel()
     train_loader = DataLoader(_DummyDataset(4), batch_size=2)
     valid_loader = DataLoader(_DummyDataset(4), batch_size=2)
@@ -83,13 +82,14 @@ def _make_trainer(tmp_path, monkeypatch, accum_steps=1):
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
+        save_dir=str(tmp_path),
         max_grad_norm=1.0,
         accum_steps=accum_steps,
     )
 
 
-def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path, monkeypatch):
-    trainer = _make_trainer(tmp_path, monkeypatch)
+def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path):
+    trainer = _make_trainer(tmp_path)
     before = trainer.model.conv.weight.detach().clone()
 
     losses = trainer.step()
@@ -100,29 +100,29 @@ def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path, monkeypatch
     assert not torch.allclose(before, after)
 
 
-def test_trainer_step_with_accum(tmp_path, monkeypatch):
-    trainer = _make_trainer(tmp_path, monkeypatch, accum_steps=2)
+def test_trainer_step_with_accum(tmp_path):
+    trainer = _make_trainer(tmp_path, accum_steps=2)
     losses = trainer.step()
     assert "loss" in losses
 
 
-def test_trainer_validate_returns_avg_losses(tmp_path, monkeypatch):
-    trainer = _make_trainer(tmp_path, monkeypatch)
+def test_trainer_validate_returns_avg_losses(tmp_path):
+    trainer = _make_trainer(tmp_path)
     metrics = trainer.validate()
     assert "loss" in metrics
     assert "seg" in metrics
     assert all(isinstance(v, float) for v in metrics.values())
 
 
-def test_trainer_get_batch_wraps_around(tmp_path, monkeypatch):
-    trainer = _make_trainer(tmp_path, monkeypatch)
+def test_trainer_get_batch_wraps_around(tmp_path):
+    trainer = _make_trainer(tmp_path)
     for _ in range(6):
         batch = trainer.get_batch()
         assert "image_1" in batch
 
 
-def test_trainer_save_writes_adapter_file(tmp_path, monkeypatch):
-    trainer = _make_trainer(tmp_path, monkeypatch)
+def test_trainer_save_writes_adapter_file(tmp_path):
+    trainer = _make_trainer(tmp_path)
     trainer.save()
     weights_path = os.path.join(trainer.save_dir, "weights", "last.pth")
     assert os.path.exists(weights_path)
