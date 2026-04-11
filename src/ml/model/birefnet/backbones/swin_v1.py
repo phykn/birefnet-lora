@@ -405,7 +405,6 @@ class SwinTransformer(nn.Module):
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.2,
         norm_layer: nn.Module = nn.LayerNorm,
-        ape: bool = False,
         patch_norm: bool = True,
         out_indices: tuple[int, ...] = (0, 1, 2, 3),
         frozen_stages: int = -1,
@@ -416,7 +415,6 @@ class SwinTransformer(nn.Module):
         self.pretrain_img_size = pretrain_img_size
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
-        self.ape = ape
         self.patch_norm = patch_norm
         self.out_indices = out_indices
         self.frozen_stages = frozen_stages
@@ -427,19 +425,6 @@ class SwinTransformer(nn.Module):
             embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None,
         )
-
-        if self.ape:
-            pretrain_img_size = to_2tuple(pretrain_img_size)
-            patch_size = to_2tuple(patch_size)
-            patches_resolution = [
-                pretrain_img_size[0] // patch_size[0],
-                pretrain_img_size[1] // patch_size[1],
-            ]
-
-            self.absolute_pos_embed = nn.Parameter(
-                torch.zeros(1, embed_dim, patches_resolution[0], patches_resolution[1])
-            )
-            trunc_normal_(self.absolute_pos_embed, std=0.02)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -479,9 +464,6 @@ class SwinTransformer(nn.Module):
             for param in self.patch_embed.parameters():
                 param.requires_grad = False
 
-        if self.frozen_stages >= 1 and self.ape:
-            self.absolute_pos_embed.requires_grad = False
-
         if self.frozen_stages >= 2:
             self.pos_drop.eval()
             for i in range(0, self.frozen_stages - 1):
@@ -494,12 +476,6 @@ class SwinTransformer(nn.Module):
         x = self.patch_embed(x)
 
         wh, ww = x.size(2), x.size(3)
-        if self.ape:
-            absolute_pos_embed = F.interpolate(
-                self.absolute_pos_embed, size=(wh, ww), mode="bicubic"
-            )
-            x = x + absolute_pos_embed
-
         outs = []
         x = x.flatten(2).transpose(1, 2)
         x = self.pos_drop(x)
