@@ -1,66 +1,20 @@
 import numpy as np
 
-from abc import ABC, abstractmethod
+
+def random_flip(
+    image: np.ndarray, mask: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply a random element of the D4 dihedral group to (image, mask).
+
+    The eight group elements are indexed by (rot_k in 0..3, hflip in 0..1).
+    """
+    rot_k = int(np.random.randint(4))
+    do_hflip = bool(np.random.randint(2))
+    return _apply(image, rot_k, do_hflip), _apply(mask, rot_k, do_hflip)
 
 
-class FlipBase(ABC):
-    @abstractmethod
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        pass
-
-    def __call__(
-        self, image: np.ndarray, mask: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        return self.flip(image), self.flip(mask)
-
-
-class Identity(FlipBase):
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        return x
-
-
-class HorizontalFlip(FlipBase):
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        return np.ascontiguousarray(np.flip(x, axis=1))
-
-
-class VerticalFlip(FlipBase):
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        return np.ascontiguousarray(np.flip(x, axis=0))
-
-
-class TransposeFlip(FlipBase):
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        axes = (1, 0) + tuple(range(2, x.ndim))
-        return np.ascontiguousarray(np.transpose(x, axes))
-
-
-class Compose(FlipBase):
-    def __init__(self, *flips: FlipBase) -> None:
-        self._flips = flips
-
-    def flip(self, x: np.ndarray) -> np.ndarray:
-        for f in self._flips:
-            x = f.flip(x)
-        return x
-
-
-_hflip = HorizontalFlip()
-_vflip = VerticalFlip()
-_tflip = TransposeFlip()
-
-_transforms: tuple[FlipBase, ...] = (
-    Identity(),
-    _hflip,
-    _vflip,
-    _tflip,
-    Compose(_vflip, _hflip),
-    Compose(_tflip, _hflip),
-    Compose(_tflip, _vflip),
-    Compose(_tflip, _vflip, _hflip),
-)
-
-
-def random_flip(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    transform = _transforms[np.random.randint(len(_transforms))]
-    return transform(image, mask)
+def _apply(x: np.ndarray, rot_k: int, do_hflip: bool) -> np.ndarray:
+    y = np.rot90(x, k=rot_k, axes=(0, 1))
+    if do_hflip:
+        y = np.flip(y, axis=1)
+    return np.ascontiguousarray(y)

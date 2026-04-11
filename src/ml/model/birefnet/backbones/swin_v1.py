@@ -56,18 +56,13 @@ class WindowAttention(nn.Module):
         window_size: tuple[int, int],
         num_heads: int,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
-        sdpa_enabled: bool = True,
     ) -> None:
         super().__init__()
-        self.sdpa_enabled = sdpa_enabled
         self.dim = dim
         self.window_size = window_size
         self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = qk_scale or head_dim**-0.5
 
         self.relative_position_bias_table = nn.Parameter(
             torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
@@ -87,12 +82,10 @@ class WindowAttention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop_prob = attn_drop
-        self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
         trunc_normal_(self.relative_position_bias_table, std=0.02)
-        self.softmax = nn.Softmax(dim=-1)
 
     def forward(
         self, x: torch.Tensor, mask: torch.Tensor | None = None
@@ -118,32 +111,19 @@ class WindowAttention(nn.Module):
         if mask is not None:
             mask = mask.to(dtype=q.dtype).unsqueeze(1)
 
-        if self.sdpa_enabled:
-            attn_mask = relative_position_bias
-            if mask is not None:
-                attn_mask = attn_mask + mask
+        attn_mask = relative_position_bias
+        if mask is not None:
+            attn_mask = attn_mask + mask
 
-            attn_out = F.scaled_dot_product_attention(
-                q,
-                k,
-                v,
-                attn_mask=attn_mask,
-                dropout_p=self.attn_drop_prob if self.training else 0.0,
-                is_causal=False,
-            )
-            x = attn_out.transpose(1, 2).reshape(B_, N, C)
-        else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
-            attn = attn + relative_position_bias
-
-            if mask is not None:
-                nW = mask.shape[0]
-                attn = attn.view(B_ // nW, nW, self.num_heads, N, N) + mask.unsqueeze(0)
-                attn = attn.view(-1, self.num_heads, N, N)
-            attn = self.softmax(attn)
-            attn = self.attn_drop(attn)
-            x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+        attn_out = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=self.attn_drop_prob if self.training else 0.0,
+            is_causal=False,
+        )
+        x = attn_out.transpose(1, 2).reshape(B_, N, C)
         x = self.proj(x)
         return self.proj_drop(x)
 
@@ -157,13 +137,11 @@ class SwinTransformerBlock(nn.Module):
         shift_size: int = 0,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         drop: float = 0.0,
         attn_drop: float = 0.0,
         drop_path: float = 0.0,
         act_layer: nn.Module = nn.GELU,
         norm_layer: nn.Module = nn.LayerNorm,
-        sdpa_enabled: bool = True,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -171,7 +149,6 @@ class SwinTransformerBlock(nn.Module):
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
-        self.sdpa_enabled = sdpa_enabled
         assert 0 <= self.shift_size < self.window_size, (
             "shift_size must in 0-window_size"
         )
@@ -182,10 +159,8 @@ class SwinTransformerBlock(nn.Module):
             window_size=to_2tuple(self.window_size),
             num_heads=num_heads,
             qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
-            sdpa_enabled=sdpa_enabled,
         )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
@@ -218,14 +193,11 @@ class SwinTransformerBlock(nn.Module):
             shifted_x = torch.roll(
                 x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2)
             )
-            if self.sdpa_enabled:
-                B = x.size(0)
-                nW, N = mask_matrix.size(0), mask_matrix.size(1)
-                attn_mask = (
-                    mask_matrix.unsqueeze(0).expand(B, nW, N, N).reshape(B * nW, N, N)
-                )
-            else:
-                attn_mask = mask_matrix
+            B = x.size(0)
+            nW, N = mask_matrix.size(0), mask_matrix.size(1)
+            attn_mask = (
+                mask_matrix.unsqueeze(0).expand(B, nW, N, N).reshape(B * nW, N, N)
+            )
         else:
             shifted_x = x
             attn_mask = None
@@ -291,21 +263,18 @@ class BasicLayer(nn.Module):
         window_size: int = 7,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         drop: float = 0.0,
         attn_drop: float = 0.0,
         drop_path: float | list[float] = 0.0,
         norm_layer: nn.Module = nn.LayerNorm,
         downsample: nn.Module | None = None,
         use_checkpoint: bool = False,
-        sdpa_enabled: bool = True,
     ) -> None:
         super().__init__()
         self.window_size = window_size
         self.shift_size = window_size // 2
         self.depth = depth
         self.use_checkpoint = use_checkpoint
-        self.sdpa_enabled = sdpa_enabled
 
         self.blocks = nn.ModuleList(
             [
@@ -316,14 +285,12 @@ class BasicLayer(nn.Module):
                     shift_size=0 if (i % 2 == 0) else window_size // 2,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
-                    qk_scale=qk_scale,
                     drop=drop,
                     attn_drop=attn_drop,
                     drop_path=drop_path[i]
                     if isinstance(drop_path, list)
                     else drop_path,
                     norm_layer=norm_layer,
-                    sdpa_enabled=sdpa_enabled,
                 )
                 for i in range(depth)
             ]
@@ -434,28 +401,21 @@ class SwinTransformer(nn.Module):
         window_size: int = 7,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         drop_rate: float = 0.0,
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.2,
         norm_layer: nn.Module = nn.LayerNorm,
-        ape: bool = False,
         patch_norm: bool = True,
         out_indices: tuple[int, ...] = (0, 1, 2, 3),
-        frozen_stages: int = -1,
         use_checkpoint: bool = False,
-        sdpa_enabled: bool = True,
     ) -> None:
         super().__init__()
 
         self.pretrain_img_size = pretrain_img_size
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
-        self.ape = ape
         self.patch_norm = patch_norm
         self.out_indices = out_indices
-        self.frozen_stages = frozen_stages
-        self.sdpa_enabled = sdpa_enabled
 
         self.patch_embed = PatchEmbed(
             patch_size=patch_size,
@@ -463,19 +423,6 @@ class SwinTransformer(nn.Module):
             embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None,
         )
-
-        if self.ape:
-            pretrain_img_size = to_2tuple(pretrain_img_size)
-            patch_size = to_2tuple(patch_size)
-            patches_resolution = [
-                pretrain_img_size[0] // patch_size[0],
-                pretrain_img_size[1] // patch_size[1],
-            ]
-
-            self.absolute_pos_embed = nn.Parameter(
-                torch.zeros(1, embed_dim, patches_resolution[0], patches_resolution[1])
-            )
-            trunc_normal_(self.absolute_pos_embed, std=0.02)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -490,14 +437,12 @@ class SwinTransformer(nn.Module):
                 window_size=window_size,
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
                 drop=drop_rate,
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
                 downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                 use_checkpoint=use_checkpoint,
-                sdpa_enabled=sdpa_enabled,
             )
             self.layers.append(layer)
 
@@ -509,35 +454,10 @@ class SwinTransformer(nn.Module):
             layer_name = f"norm{i_layer}"
             self.add_module(layer_name, layer)
 
-        self._freeze_stages()
-
-    def _freeze_stages(self) -> None:
-        if self.frozen_stages >= 0:
-            self.patch_embed.eval()
-            for param in self.patch_embed.parameters():
-                param.requires_grad = False
-
-        if self.frozen_stages >= 1 and self.ape:
-            self.absolute_pos_embed.requires_grad = False
-
-        if self.frozen_stages >= 2:
-            self.pos_drop.eval()
-            for i in range(0, self.frozen_stages - 1):
-                m = self.layers[i]
-                m.eval()
-                for param in m.parameters():
-                    param.requires_grad = False
-
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
         x = self.patch_embed(x)
 
         wh, ww = x.size(2), x.size(3)
-        if self.ape:
-            absolute_pos_embed = F.interpolate(
-                self.absolute_pos_embed, size=(wh, ww), mode="bicubic"
-            )
-            x = x + absolute_pos_embed
-
         outs = []
         x = x.flatten(2).transpose(1, 2)
         x = self.pos_drop(x)
@@ -558,20 +478,12 @@ class SwinTransformer(nn.Module):
 
         return tuple(outs)
 
-    def train(self, mode: bool = True) -> "SwinTransformer":
-        super(SwinTransformer, self).train(mode)
-        self._freeze_stages()
-        return self
 
-
-def swin_v1_l(
-    sdpa_enabled: bool = True, gradient_checkpointing: bool = False
-) -> SwinTransformer:
+def swin_v1_l(gradient_checkpointing: bool = False) -> SwinTransformer:
     return SwinTransformer(
         embed_dim=192,
         depths=[2, 2, 18, 2],
         num_heads=[6, 12, 24, 48],
         window_size=12,
-        sdpa_enabled=sdpa_enabled,
         use_checkpoint=gradient_checkpointing,
     )

@@ -56,40 +56,27 @@ class Decoder(nn.Module):
     def __init__(
         self,
         channels: list[int],
-        dec_ipt: bool = True,
-        dec_ipt_split: bool = True,
-        ms_supervision: bool = True,
-        out_ref: bool = True,
     ) -> None:
         super().__init__()
-        self.dec_ipt = dec_ipt
-        self.ms_supervision = ms_supervision
-        self.out_ref = out_ref
 
-        if dec_ipt:
-            self.split = dec_ipt_split
-            ipt_blk_in_channels = (
-                [3072, 768, 192, 48, 3] if dec_ipt_split else [3, 3, 3, 3, 3]
-            )
-            ipt_blk_out_channels = [channels[i] // 8 for i in range(4)]
+        ipt_blk_in_channels = [3072, 768, 192, 48, 3]
+        ipt_blk_out_channels = [channels[i] // 8 for i in range(4)]
 
-            self.ipt_blk5 = SimpleConvs(
-                ipt_blk_in_channels[0], ipt_blk_out_channels[0], inter_channels=64
-            )
-            self.ipt_blk4 = SimpleConvs(
-                ipt_blk_in_channels[1], ipt_blk_out_channels[0], inter_channels=64
-            )
-            self.ipt_blk3 = SimpleConvs(
-                ipt_blk_in_channels[2], ipt_blk_out_channels[1], inter_channels=64
-            )
-            self.ipt_blk2 = SimpleConvs(
-                ipt_blk_in_channels[3], ipt_blk_out_channels[2], inter_channels=64
-            )
-            self.ipt_blk1 = SimpleConvs(
-                ipt_blk_in_channels[4], ipt_blk_out_channels[3], inter_channels=64
-            )
-        else:
-            self.split = None
+        self.ipt_blk5 = SimpleConvs(
+            ipt_blk_in_channels[0], ipt_blk_out_channels[0], inter_channels=64
+        )
+        self.ipt_blk4 = SimpleConvs(
+            ipt_blk_in_channels[1], ipt_blk_out_channels[0], inter_channels=64
+        )
+        self.ipt_blk3 = SimpleConvs(
+            ipt_blk_in_channels[2], ipt_blk_out_channels[1], inter_channels=64
+        )
+        self.ipt_blk2 = SimpleConvs(
+            ipt_blk_in_channels[3], ipt_blk_out_channels[2], inter_channels=64
+        )
+        self.ipt_blk1 = SimpleConvs(
+            ipt_blk_in_channels[4], ipt_blk_out_channels[3], inter_channels=64
+        )
 
         bb_neck_out_channels = channels.copy()
 
@@ -97,13 +84,10 @@ class Decoder(nn.Module):
             bb_neck_out_channels[-1] // 2
         ]
 
-        if dec_ipt:
-            dec_blk_in_channels = [
-                bb_neck_out_channels[i] + ipt_blk_out_channels[max(0, i - 1)]
-                for i in range(len(bb_neck_out_channels))
-            ]
-        else:
-            dec_blk_in_channels = bb_neck_out_channels.copy()
+        dec_blk_in_channels = [
+            bb_neck_out_channels[i] + ipt_blk_out_channels[max(0, i - 1)]
+            for i in range(len(bb_neck_out_channels))
+        ]
 
         self.decoder_block4 = BasicDecBlk(
             dec_blk_in_channels[0], dec_blk_out_channels[0]
@@ -118,9 +102,7 @@ class Decoder(nn.Module):
             dec_blk_in_channels[3], dec_blk_out_channels[3]
         )
 
-        conv_out1_in_channels = dec_blk_out_channels[3] + (
-            ipt_blk_out_channels[3] if dec_ipt else 0
-        )
+        conv_out1_in_channels = dec_blk_out_channels[3] + ipt_blk_out_channels[3]
         self.conv_out1 = nn.Sequential(nn.Conv2d(conv_out1_in_channels, 1, 1))
 
         self.lateral_block4 = BasicLatBlk(
@@ -133,58 +115,38 @@ class Decoder(nn.Module):
             bb_neck_out_channels[3], dec_blk_out_channels[2]
         )
 
-        if self.ms_supervision:
-            self.conv_ms_spvn_4 = nn.Conv2d(dec_blk_out_channels[0], 1, 1)
-            self.conv_ms_spvn_3 = nn.Conv2d(dec_blk_out_channels[1], 1, 1)
-            self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
+        self.conv_ms_spvn_4 = nn.Conv2d(dec_blk_out_channels[0], 1, 1)
+        self.conv_ms_spvn_3 = nn.Conv2d(dec_blk_out_channels[1], 1, 1)
+        self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
 
-            if self.out_ref:
-                self.gdt_convs_4 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
-                self.gdt_convs_3 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
-                self.gdt_convs_2 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
+        self.gdt_convs_4 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
+        self.gdt_convs_3 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
+        self.gdt_convs_2 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
 
-                self.gdt_convs_pred_4 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_pred_3 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_pred_2 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
+        self.gdt_convs_pred_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_pred_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_pred_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
-                self.gdt_convs_attn_4 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_attn_3 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_attn_2 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
+        self.gdt_convs_attn_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_attn_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_attn_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
     def forward(
         self, features: list[torch.Tensor] | tuple[torch.Tensor, ...]
     ) -> list[torch.Tensor] | tuple[list[list[torch.Tensor]], list[torch.Tensor]]:
-        if self.training and self.out_ref:
+        if self.training:
             outs_gdt_pred = []
             outs_gdt_label = []
             x, x1, x2, x3, x4, gdt_gt = features
@@ -193,44 +155,38 @@ class Decoder(nn.Module):
 
         outs = []
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=x4,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=x4,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk5(
+            F.interpolate(
+                patches_batch,
+                size=x4.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk5(
-                F.interpolate(
-                    patches_batch,
-                    size=x4.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            x4 = torch.cat((x4, _patched), dim=1)
+        )
+        x4 = torch.cat((x4, _patched), dim=1)
 
         p4 = self.decoder_block4(x4)
-        m4 = self.conv_ms_spvn_4(p4) if self.ms_supervision and self.training else None
+        m4 = self.conv_ms_spvn_4(p4) if self.training else None
 
-        if self.out_ref:
-            p4_gdt = self.gdt_convs_4(p4)
-            if self.training:
-                m4_dia = m4
-                gdt_label_main_4 = gdt_gt * F.interpolate(
-                    m4_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_4)
-                gdt_pred_4 = self.gdt_convs_pred_4(p4_gdt)
-                outs_gdt_pred.append(gdt_pred_4)
-            gdt_attn_4 = self.gdt_convs_attn_4(p4_gdt).sigmoid()
-            p4 = p4 * gdt_attn_4
+        p4_gdt = self.gdt_convs_4(p4)
+        if self.training:
+            m4_dia = m4
+            gdt_label_main_4 = gdt_gt * F.interpolate(
+                m4_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_4)
+            gdt_pred_4 = self.gdt_convs_pred_4(p4_gdt)
+            outs_gdt_pred.append(gdt_pred_4)
+        gdt_attn_4 = self.gdt_convs_attn_4(p4_gdt).sigmoid()
+        p4 = p4 * gdt_attn_4
 
         _p4 = F.interpolate(
             p4,
@@ -240,44 +196,38 @@ class Decoder(nn.Module):
         )
         _p3 = _p4 + self.lateral_block4(x3)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p3,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p3,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk4(
+            F.interpolate(
+                patches_batch,
+                size=x3.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk4(
-                F.interpolate(
-                    patches_batch,
-                    size=x3.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p3 = torch.cat((_p3, _patched), dim=1)
+        )
+        _p3 = torch.cat((_p3, _patched), dim=1)
 
         p3 = self.decoder_block3(_p3)
-        m3 = self.conv_ms_spvn_3(p3) if self.ms_supervision and self.training else None
+        m3 = self.conv_ms_spvn_3(p3) if self.training else None
 
-        if self.out_ref:
-            p3_gdt = self.gdt_convs_3(p3)
-            if self.training:
-                m3_dia = m3
-                gdt_label_main_3 = gdt_gt * F.interpolate(
-                    m3_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_3)
-                gdt_pred_3 = self.gdt_convs_pred_3(p3_gdt)
-                outs_gdt_pred.append(gdt_pred_3)
-            gdt_attn_3 = self.gdt_convs_attn_3(p3_gdt).sigmoid()
-            p3 = p3 * gdt_attn_3
+        p3_gdt = self.gdt_convs_3(p3)
+        if self.training:
+            m3_dia = m3
+            gdt_label_main_3 = gdt_gt * F.interpolate(
+                m3_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_3)
+            gdt_pred_3 = self.gdt_convs_pred_3(p3_gdt)
+            outs_gdt_pred.append(gdt_pred_3)
+        gdt_attn_3 = self.gdt_convs_attn_3(p3_gdt).sigmoid()
+        p3 = p3 * gdt_attn_3
 
         _p3 = F.interpolate(
             p3,
@@ -287,44 +237,38 @@ class Decoder(nn.Module):
         )
         _p2 = _p3 + self.lateral_block3(x2)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p2,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p2,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk3(
+            F.interpolate(
+                patches_batch,
+                size=x2.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk3(
-                F.interpolate(
-                    patches_batch,
-                    size=x2.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p2 = torch.cat((_p2, _patched), dim=1)
+        )
+        _p2 = torch.cat((_p2, _patched), dim=1)
 
         p2 = self.decoder_block2(_p2)
-        m2 = self.conv_ms_spvn_2(p2) if self.ms_supervision and self.training else None
+        m2 = self.conv_ms_spvn_2(p2) if self.training else None
 
-        if self.out_ref:
-            p2_gdt = self.gdt_convs_2(p2)
-            if self.training:
-                m2_dia = m2
-                gdt_label_main_2 = gdt_gt * F.interpolate(
-                    m2_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_2)
-                gdt_pred_2 = self.gdt_convs_pred_2(p2_gdt)
-                outs_gdt_pred.append(gdt_pred_2)
-            gdt_attn_2 = self.gdt_convs_attn_2(p2_gdt).sigmoid()
-            p2 = p2 * gdt_attn_2
+        p2_gdt = self.gdt_convs_2(p2)
+        if self.training:
+            m2_dia = m2
+            gdt_label_main_2 = gdt_gt * F.interpolate(
+                m2_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_2)
+            gdt_pred_2 = self.gdt_convs_pred_2(p2_gdt)
+            outs_gdt_pred.append(gdt_pred_2)
+        gdt_attn_2 = self.gdt_convs_attn_2(p2_gdt).sigmoid()
+        p2 = p2 * gdt_attn_2
 
         _p2 = F.interpolate(
             p2,
@@ -334,25 +278,20 @@ class Decoder(nn.Module):
         )
         _p1 = _p2 + self.lateral_block2(x1)
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p1,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p1,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk2(
+            F.interpolate(
+                patches_batch,
+                size=x1.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk2(
-                F.interpolate(
-                    patches_batch,
-                    size=x1.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p1 = torch.cat((_p1, _patched), dim=1)
+        )
+        _p1 = torch.cat((_p1, _patched), dim=1)
 
         _p1 = self.decoder_block1(_p1)
         _p1 = F.interpolate(
@@ -362,35 +301,30 @@ class Decoder(nn.Module):
             align_corners=True,
         )
 
-        if self.dec_ipt:
-            patches_batch = (
-                image2patches(
-                    x,
-                    patch_ref=_p1,
-                    transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
-                )
-                if self.split
-                else x
+        patches_batch = image2patches(
+            x,
+            patch_ref=_p1,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w",
+        )
+        _patched = self.ipt_blk1(
+            F.interpolate(
+                patches_batch,
+                size=x.shape[2:],
+                mode="bilinear",
+                align_corners=True,
             )
-            _patched = self.ipt_blk1(
-                F.interpolate(
-                    patches_batch,
-                    size=x.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-            )
-            _p1 = torch.cat((_p1, _patched), dim=1)
+        )
+        _p1 = torch.cat((_p1, _patched), dim=1)
 
         p1_out = self.conv_out1(_p1)
 
-        if self.ms_supervision and self.training:
+        if self.training:
             outs.append(m4)
             outs.append(m3)
             outs.append(m2)
         outs.append(p1_out)
 
-        if not (self.out_ref and self.training):
+        if not self.training:
             return outs
 
         return [outs_gdt_pred, outs_gdt_label], outs
@@ -400,10 +334,6 @@ class BiRefNet(nn.Module):
     def __init__(
         self,
         lateral_channels_in_collection: list[int] = [1536, 768, 384, 192],
-        dec_ipt: bool = True,
-        dec_ipt_split: bool = True,
-        ms_supervision: bool = True,
-        out_ref: bool = True,
         gradient_checkpointing: bool = False,
     ) -> None:
         super().__init__()
@@ -413,7 +343,6 @@ class BiRefNet(nn.Module):
         ]
 
         self.cxt = lateral_channels_in_collection[1:][::-1][-3:]
-        self.out_ref = out_ref
 
         self.bb = build_backbone(gradient_checkpointing=gradient_checkpointing)
 
@@ -425,10 +354,6 @@ class BiRefNet(nn.Module):
 
         self.decoder = Decoder(
             channels=channels,
-            dec_ipt=dec_ipt,
-            dec_ipt_split=dec_ipt_split,
-            ms_supervision=ms_supervision,
-            out_ref=out_ref,
         )
 
     def forward_enc(
@@ -517,7 +442,7 @@ class BiRefNet(nn.Module):
 
         features = [x, x1, x2, x3, x4]
 
-        if self.training and self.out_ref:
+        if self.training:
             features.append(laplacian(torch.mean(x, dim=1).unsqueeze(1), kernel_size=5))
 
         scaled_preds = self.decoder(features)
