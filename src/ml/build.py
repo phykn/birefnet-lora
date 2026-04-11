@@ -102,18 +102,26 @@ def build_birefnet(cfg: Any) -> BiRefNet:
     return model
 
 
-def build_lora_birefnet(
+def build_lora_birefnet_for_training(
     cfg: Any,
     model: torch.nn.Module,
-    ckpt_path: str | None = None,
 ) -> LoRABiRefNet:
+    """Wrap `model` with fresh (random-initialized) LoRA adapters for training."""
     device = next(model.parameters()).device
     lora_model = LoRABiRefNet(model=model, rank=cfg.lora.rank, alpha=cfg.lora.alpha)
+    return lora_model.to(device)
 
-    if ckpt_path:
-        lora_model.load_adapters(ckpt_path)
-        print(f"[LOAD] {ckpt_path}")
 
+def build_lora_birefnet_for_inference(
+    cfg: Any,
+    model: torch.nn.Module,
+    ckpt_path: str,
+) -> LoRABiRefNet:
+    """Wrap `model` with LoRA adapters and load trained weights from `ckpt_path`."""
+    device = next(model.parameters()).device
+    lora_model = LoRABiRefNet(model=model, rank=cfg.lora.rank, alpha=cfg.lora.alpha)
+    lora_model.load_adapters(ckpt_path)
+    print(f"[LOAD] {ckpt_path}")
     return lora_model.to(device)
 
 

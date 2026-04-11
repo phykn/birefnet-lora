@@ -4,7 +4,12 @@ import shutil
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from src.ml.build import build_birefnet, build_dl, build_lora_birefnet, build_trainer
+from src.ml.build import (
+    build_birefnet,
+    build_dl,
+    build_lora_birefnet_for_training,
+    build_trainer,
+)
 
 
 CYAN = "\033[36m"
@@ -111,7 +116,7 @@ def main() -> None:
         torch.backends.cudnn.benchmark = True
 
     base_model = build_birefnet(cfg=cfg).to(device)
-    model = build_lora_birefnet(cfg=cfg, model=base_model)
+    model = build_lora_birefnet_for_training(cfg=cfg, model=base_model)
     train_loader, valid_loader, split_filenames = build_dl(cfg=cfg)
     trainer = build_trainer(
         cfg=cfg,
