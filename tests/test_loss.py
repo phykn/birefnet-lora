@@ -59,17 +59,19 @@ def test_symmetric_binary_kl_resizes_second():
 
 
 class _TrainModel(nn.Module):
-    """Mimics LoRABiRefNet train output: (preds_list, aux_loss)."""
+    """Mimics LoRABiRefNet output: ModelOutput in both modes."""
 
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(3, 1, 1)
 
     def forward(self, x):
+        from src.ml.model.lora.wrapper import ModelOutput
+
         pred = self.conv(x)
         if self.training:
-            return [pred, pred], torch.tensor(0.5, device=x.device)
-        return pred
+            return ModelOutput(preds=[pred, pred], aux=torch.tensor(0.5, device=x.device))
+        return ModelOutput(preds=[pred], aux=None)
 
 
 def test_custom_loss_train_mode_returns_all_terms():

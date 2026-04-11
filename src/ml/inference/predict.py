@@ -27,7 +27,7 @@ def predict(
     x = np.transpose(x, (2, 0, 1))[None]
     x = torch.from_numpy(x).to(device)
 
-    logits = model(x)
+    logits = model(x).preds[-1]
     logits = torch.nn.functional.interpolate(
         logits, size=(h, w), mode="bilinear", align_corners=True
     )

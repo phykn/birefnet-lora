@@ -1,8 +1,16 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from .adapters import LoRAConv2d, LoRALinear, apply_conv2d, apply_linear
+
+
+@dataclass
+class ModelOutput:
+    preds: list[torch.Tensor]
+    aux: torch.Tensor | None = None
 
 
 class LoRABiRefNet(nn.Module):
@@ -36,7 +44,7 @@ class LoRABiRefNet(nn.Module):
             "frozen": total_params - trainable_params,
         }
 
-    def _train_step(self, x: torch.Tensor) -> tuple[list[torch.Tensor], torch.Tensor]:
+    def _train_step(self, x: torch.Tensor) -> ModelOutput:
         (gdt_predictions, gdt_labels), predictions = self.model(x)
 
         auxiliary_loss = torch.tensor(0.0, device=x.device)
@@ -52,16 +60,16 @@ class LoRABiRefNet(nn.Module):
                 gdt_prediction,
                 gdt_label,
             )
+        num_levels = max(len(gdt_predictions), 1)
+        auxiliary_loss = auxiliary_loss / num_levels
 
-        return predictions, auxiliary_loss
+        return ModelOutput(preds=predictions, aux=auxiliary_loss)
 
-    def _eval_step(self, x: torch.Tensor) -> torch.Tensor:
+    def _eval_step(self, x: torch.Tensor) -> ModelOutput:
         predictions = self.model(x)
-        return predictions[-1]
+        return ModelOutput(preds=predictions, aux=None)
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[list[torch.Tensor], torch.Tensor] | torch.Tensor:
+    def forward(self, x: torch.Tensor) -> ModelOutput:
         if self.training:
             return self._train_step(x)
         return self._eval_step(x)

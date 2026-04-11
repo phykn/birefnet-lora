@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.ml.model.lora.wrapper import ModelOutput
+
 
 def _match_size(src: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
     if src.shape[2:] == ref.shape[2:]:
@@ -78,13 +80,14 @@ class CustomLoss(nn.Module):
             batch_size = image_1.shape[0]
             images = torch.cat([image_1, image_2], dim=0)
             masks = torch.cat([mask, mask], dim=0)
-            preds, aux = model(images)
+            out: ModelOutput = model(images)
+            preds = out.preds
 
-            # Assumes the last entry of `preds` is the full-resolution logit map
-            # (i.e. BiRefNet is built with ms_supervision=True and out_ref=True).
             seg_loss = sum(self.seg(p, masks) for p in preds) / len(preds)
             cons_loss = self.cons(preds[-1][:batch_size], preds[-1][batch_size:])
-            aux_loss = self.lambda_aux * aux
+            aux_loss = self.lambda_aux * (
+                out.aux if out.aux is not None else torch.tensor(0.0, device=device)
+            )
             loss = seg_loss + cons_loss + aux_loss
 
             return {
@@ -94,6 +97,7 @@ class CustomLoss(nn.Module):
                 "aux": aux_loss,
             }, loss
 
-        pred = model(image_1)
+        out = model(image_1)
+        pred = out.preds[-1]
         seg_loss = self.seg(pred, mask)
         return {"loss": seg_loss, "seg": seg_loss}, seg_loss

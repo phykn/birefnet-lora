@@ -14,10 +14,15 @@ class _DummyModel(nn.Module):
         self.conv = nn.Conv2d(3, 1, 1)
 
     def forward(self, x):
+        from src.ml.model.lora.wrapper import ModelOutput
+
         pred = self.conv(x)
         if self.training:
-            return [pred, pred], torch.tensor(0.0, device=x.device)
-        return pred
+            return ModelOutput(
+                preds=[pred, pred],
+                aux=torch.tensor(0.0, device=x.device),
+            )
+        return ModelOutput(preds=[pred], aux=None)
 
     def get_adapter_params(self):
         return list(self.parameters())
@@ -30,12 +35,15 @@ class _DummyCriterion(nn.Module):
     def forward(self, model, batch):
         device = next(model.parameters()).device
         if model.training:
-            preds, aux = model(batch["image_1"].to(device))
+            out = model(batch["image_1"].to(device))
+            preds = out.preds
             seg = sum(p.mean() ** 2 for p in preds) / len(preds)
             cons = (preds[0] - preds[-1]).pow(2).mean()
+            aux = out.aux if out.aux is not None else torch.tensor(0.0, device=device)
             loss = seg + cons + aux
             return {"loss": loss, "seg": seg, "cons": cons, "aux": aux}, loss
-        pred = model(batch["image_1"].to(device))
+        out = model(batch["image_1"].to(device))
+        pred = out.preds[-1]
         seg = pred.mean() ** 2
         return {"loss": seg, "seg": seg}, seg
 

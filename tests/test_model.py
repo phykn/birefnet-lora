@@ -142,3 +142,35 @@ def test_load_adapters_rejects_mismatched_keys(tmp_path):
     except RuntimeError:
         return
     raise AssertionError("Expected RuntimeError on key mismatch")
+
+
+def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
+    from src.ml.model.lora.wrapper import ModelOutput
+
+    class _Stub(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bb = _Backbone()
+            self.decoder = _Decoder()
+
+        def forward(self, x):
+            pred = torch.zeros(x.shape[0], 1, 4, 4)
+            if self.training:
+                gdt_preds = [torch.zeros(x.shape[0], 1, 4, 4)]
+                gdt_labels = [torch.zeros(x.shape[0], 1, 4, 4)]
+                return [[gdt_preds, gdt_labels], [pred, pred]]
+            return [pred, pred]
+
+    lora = LoRABiRefNet(_Stub(), rank=2, alpha=4.0)
+
+    lora.train()
+    out_train = lora(torch.randn(1, 3, 8, 8))
+    assert isinstance(out_train, ModelOutput)
+    assert isinstance(out_train.preds, list)
+    assert out_train.aux is not None
+    assert out_train.aux.dim() == 0
+
+    lora.eval()
+    out_eval = lora(torch.randn(1, 3, 8, 8))
+    assert isinstance(out_eval, ModelOutput)
+    assert out_eval.aux is None
