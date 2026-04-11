@@ -400,7 +400,6 @@ class BiRefNet(nn.Module):
     def __init__(
         self,
         lateral_channels_in_collection: list[int] = [1536, 768, 384, 192],
-        mul_scl_ipt: str = "cat",
         dec_ipt: bool = True,
         dec_ipt_split: bool = True,
         ms_supervision: bool = True,
@@ -409,13 +408,11 @@ class BiRefNet(nn.Module):
     ) -> None:
         super().__init__()
 
-        if mul_scl_ipt == "cat":
-            lateral_channels_in_collection = [
-                ch * 2 for ch in lateral_channels_in_collection
-            ]
+        lateral_channels_in_collection = [
+            ch * 2 for ch in lateral_channels_in_collection
+        ]
 
         self.cxt = lateral_channels_in_collection[1:][::-1][-3:]
-        self.mul_scl_ipt = mul_scl_ipt
         self.out_ref = out_ref
 
         self.bb = build_backbone(gradient_checkpointing=gradient_checkpointing)
@@ -442,77 +439,59 @@ class BiRefNet(nn.Module):
     ]:
         x1, x2, x3, x4 = self.bb(x)
 
-        if self.mul_scl_ipt:
-            B, C, H, W = x.shape
-            x_pyramid = F.interpolate(
-                x, size=(H // 2, W // 2), mode="bilinear", align_corners=True
-            )
-
-            if self.mul_scl_ipt == "cat":
-                pyramid_x1, pyramid_x2, pyramid_x3, pyramid_x4 = self.bb(x_pyramid)
-                x1 = torch.cat(
-                    [
-                        x1,
-                        F.interpolate(
-                            pyramid_x1,
-                            size=x1.shape[2:],
-                            mode="bilinear",
-                            align_corners=True,
-                        ),
-                    ],
-                    dim=1,
-                )
-                x2 = torch.cat(
-                    [
-                        x2,
-                        F.interpolate(
-                            pyramid_x2,
-                            size=x2.shape[2:],
-                            mode="bilinear",
-                            align_corners=True,
-                        ),
-                    ],
-                    dim=1,
-                )
-                x3 = torch.cat(
-                    [
-                        x3,
-                        F.interpolate(
-                            pyramid_x3,
-                            size=x3.shape[2:],
-                            mode="bilinear",
-                            align_corners=True,
-                        ),
-                    ],
-                    dim=1,
-                )
-                x4 = torch.cat(
-                    [
-                        x4,
-                        F.interpolate(
-                            pyramid_x4,
-                            size=x4.shape[2:],
-                            mode="bilinear",
-                            align_corners=True,
-                        ),
-                    ],
-                    dim=1,
-                )
-
-            elif self.mul_scl_ipt == "add":
-                pyramid_x1, pyramid_x2, pyramid_x3, pyramid_x4 = self.bb(x_pyramid)
-                x1 = x1 + F.interpolate(
-                    pyramid_x1, size=x1.shape[2:], mode="bilinear", align_corners=True
-                )
-                x2 = x2 + F.interpolate(
-                    pyramid_x2, size=x2.shape[2:], mode="bilinear", align_corners=True
-                )
-                x3 = x3 + F.interpolate(
-                    pyramid_x3, size=x3.shape[2:], mode="bilinear", align_corners=True
-                )
-                x4 = x4 + F.interpolate(
-                    pyramid_x4, size=x4.shape[2:], mode="bilinear", align_corners=True
-                )
+        B, C, H, W = x.shape
+        x_pyramid = F.interpolate(
+            x, size=(H // 2, W // 2), mode="bilinear", align_corners=True
+        )
+        pyramid_x1, pyramid_x2, pyramid_x3, pyramid_x4 = self.bb(x_pyramid)
+        x1 = torch.cat(
+            [
+                x1,
+                F.interpolate(
+                    pyramid_x1,
+                    size=x1.shape[2:],
+                    mode="bilinear",
+                    align_corners=True,
+                ),
+            ],
+            dim=1,
+        )
+        x2 = torch.cat(
+            [
+                x2,
+                F.interpolate(
+                    pyramid_x2,
+                    size=x2.shape[2:],
+                    mode="bilinear",
+                    align_corners=True,
+                ),
+            ],
+            dim=1,
+        )
+        x3 = torch.cat(
+            [
+                x3,
+                F.interpolate(
+                    pyramid_x3,
+                    size=x3.shape[2:],
+                    mode="bilinear",
+                    align_corners=True,
+                ),
+            ],
+            dim=1,
+        )
+        x4 = torch.cat(
+            [
+                x4,
+                F.interpolate(
+                    pyramid_x4,
+                    size=x4.shape[2:],
+                    mode="bilinear",
+                    align_corners=True,
+                ),
+            ],
+            dim=1,
+        )
 
         class_preds = None
 

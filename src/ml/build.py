@@ -86,7 +86,6 @@ def build_dl(cfg: Any) -> tuple[DataLoader, DataLoader, dict[str, list[str]]]:
 def build_birefnet(cfg: Any) -> BiRefNet:
     model = BiRefNet(
         lateral_channels_in_collection=cfg.birefnet.lateral_channels_in_collection,
-        mul_scl_ipt=cfg.birefnet.mul_scl_ipt,
         dec_ipt=cfg.birefnet.dec_ipt,
         dec_ipt_split=cfg.birefnet.dec_ipt_split,
         ms_supervision=cfg.birefnet.ms_supervision,
