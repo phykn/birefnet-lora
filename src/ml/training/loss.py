@@ -30,8 +30,9 @@ class SegmentationLoss(nn.Module):
         self.lambda_iou = lambda_iou
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        pred = _match_size(pred, target)
         target = target.clamp(0, 1)
+        if pred.shape[2:] != target.shape[2:]:
+            target = F.interpolate(target, size=pred.shape[2:], mode="nearest")
         bce = self.bce(pred, target) * self.lambda_bce
         iou = self.iou(pred.sigmoid(), target) * self.lambda_iou
         return bce + iou
