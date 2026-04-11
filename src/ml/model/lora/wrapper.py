@@ -9,7 +9,6 @@ class LoRABiRefNet(nn.Module):
     def __init__(self, model: nn.Module, rank: int = 8, alpha: float = 16.0) -> None:
         super().__init__()
         self.model = model
-        self.size = (1024, 1024)
 
         for param in self.model.parameters():
             param.requires_grad = False
