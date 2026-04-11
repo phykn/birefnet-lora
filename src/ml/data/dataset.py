@@ -52,9 +52,6 @@ class Dataset:
 
             image_1 = self.prepare(self.bc_weak(image))
             image_2 = self.prepare(self.bc_strong(image))
-
-            if random.random() < 0.5:
-                image_1, image_2 = image_2, image_1
         else:
             image_1 = self.prepare(image)
 
