@@ -17,3 +17,6 @@ run/
 docs/
 .claude/
 CLAUDE.md
+
+# Git worktrees
+.worktrees/
