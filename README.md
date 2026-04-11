@@ -4,9 +4,9 @@ LoRA fine-tuning pipeline for [BiRefNet](https://github.com/ZhengPeng7/BiRefNet)
 The project keeps base weights frozen and trains lightweight adapters on the Swin backbone and decoder modules.
 
 ## What You Get
-- LoRA modules for linear and convolution layers.
-- Dataset pipeline with train/valid split export.
-- Per-run artifacts in `run/<YYYYMMDD_HHMMSS>/` (config, CSV splits, logs, adapter weights).
+- LoRA adapters on all backbone `Linear` layers and decoder `Conv2d` layers (deformable geometry convs excluded); only adapter params are optimized.
+- Paired image/mask dataset with seeded (42) train/valid split — `valid` takes the first `split_ratio` slice, `train` the rest. Multi-scale supervision via `data.scales`, ImageNet normalization, AMP on CUDA.
+- Per-run artifacts in `run/<YYYYMMDD_HHMMSS>/`: config snapshot, train/valid CSVs, TensorBoard logs, and `last.pth` adapter weights (overwritten every `train.save_freq` steps; no resume-from-checkpoint).
 
 ## Quick Start
 1. Install dependencies:
@@ -30,6 +30,16 @@ python run_train.py
 tensorboard --logdir run
 ```
 
+## Inference
+Wrap a base BiRefNet with trained adapter weights, then run `predict`:
+```python
+from src.ml.build import build_lora_birefnet_for_inference
+from src.ml.inference.predict import predict
+
+model = build_lora_birefnet_for_inference(cfg, checkpoint="run/<timestamp>/last.pth").cuda()
+mask = predict(model, image)  # HxWx3 uint8 RGB → HxW uint8 mask
+```
+
 ## Validation Checklist
 ```bash
 python -m compileall src run_train.py
@@ -43,11 +53,7 @@ Optional smoke test:
 ## Project Layout
 - `run_train.py`: training entrypoint.
 - `src/ml/build.py`: factory functions for model, data, trainer.
-- `src/ml/model/birefnet/`: BiRefNet architecture (backbones, blocks).
 - `src/ml/model/lora/`: LoRA adapters and `LoRABiRefNet` wrapper.
-- `src/ml/training/`: trainer, loss, and scheduler.
-- `src/ml/data/`: datasets, augmentations, and preprocessing.
-- `src/ml/inference/`: prediction entry point.
 - `src/config/`: `tune.yaml` (runtime) and `model.yaml` (architecture + LoRA).
 
 ## Reference

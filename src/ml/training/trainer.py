@@ -113,15 +113,15 @@ class Trainer:
             progress_bar.set_postfix({k: f"{v:.4f}" for k, v in losses.items()})
 
             for k, v in losses.items():
-                self._writer.add_scalar(f"Train/{k.capitalize()}", v, global_step)
+                self._writer.add_scalar(f"train/{k}", v, global_step)
             self._writer.add_scalar(
-                "Train/LR", self.scheduler.get_last_lr()[0], global_step
+                "lr/lr", self.optimizer.param_groups[0]["lr"], global_step
             )
 
             if global_step % val_freq == 0:
                 valid_losses = self.validate()
                 for k, v in valid_losses.items():
-                    self._writer.add_scalar(f"Val/{k.capitalize()}", v, global_step)
+                    self._writer.add_scalar(f"valid/{k}", v, global_step)
 
             if global_step % save_freq == 0:
                 self.save()
