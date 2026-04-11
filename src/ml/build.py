@@ -119,7 +119,7 @@ def build_lora_birefnet(
 
 def build_trainer(
     cfg: Any,
-    model: torch.nn.Module,
+    model: LoRABiRefNet,
     train_dl: DataLoader,
     valid_dl: DataLoader,
 ) -> Trainer:
