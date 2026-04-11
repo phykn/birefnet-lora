@@ -11,6 +11,7 @@ __pycache__/
 # Training data and outputs
 local_data/
 weight/
+run/
 
 # Local operational docs
 .claude/
