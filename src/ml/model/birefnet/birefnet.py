@@ -56,10 +56,8 @@ class Decoder(nn.Module):
     def __init__(
         self,
         channels: list[int],
-        out_ref: bool = True,
     ) -> None:
         super().__init__()
-        self.out_ref = out_ref
 
         ipt_blk_in_channels = [3072, 768, 192, 48, 3]
         ipt_blk_out_channels = [channels[i] // 8 for i in range(4)]
@@ -121,53 +119,34 @@ class Decoder(nn.Module):
         self.conv_ms_spvn_3 = nn.Conv2d(dec_blk_out_channels[1], 1, 1)
         self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
 
-        if self.out_ref:
-            self.gdt_convs_4 = nn.Sequential(
-                nn.Conv2d(
-                    dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1
-                ),
-                nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                nn.ReLU(inplace=True),
-            )
-            self.gdt_convs_3 = nn.Sequential(
-                nn.Conv2d(
-                    dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1
-                ),
-                nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                nn.ReLU(inplace=True),
-            )
-            self.gdt_convs_2 = nn.Sequential(
-                nn.Conv2d(
-                    dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1
-                ),
-                nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                nn.ReLU(inplace=True),
-            )
+        self.gdt_convs_4 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
+        self.gdt_convs_3 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
+        self.gdt_convs_2 = nn.Sequential(
+            nn.Conv2d(dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1),
+            nn.BatchNorm2d(GDT_INTER_CHANNELS),
+            nn.ReLU(inplace=True),
+        )
 
-            self.gdt_convs_pred_4 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
-            self.gdt_convs_pred_3 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
-            self.gdt_convs_pred_2 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
+        self.gdt_convs_pred_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_pred_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_pred_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
-            self.gdt_convs_attn_4 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
-            self.gdt_convs_attn_3 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
-            self.gdt_convs_attn_2 = nn.Sequential(
-                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-            )
+        self.gdt_convs_attn_4 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_attn_3 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
+        self.gdt_convs_attn_2 = nn.Sequential(nn.Conv2d(GDT_INTER_CHANNELS, 1, 1))
 
     def forward(
         self, features: list[torch.Tensor] | tuple[torch.Tensor, ...]
     ) -> list[torch.Tensor] | tuple[list[list[torch.Tensor]], list[torch.Tensor]]:
-        if self.training and self.out_ref:
+        if self.training:
             outs_gdt_pred = []
             outs_gdt_label = []
             x, x1, x2, x3, x4, gdt_gt = features
@@ -194,21 +173,20 @@ class Decoder(nn.Module):
         p4 = self.decoder_block4(x4)
         m4 = self.conv_ms_spvn_4(p4) if self.training else None
 
-        if self.out_ref:
-            p4_gdt = self.gdt_convs_4(p4)
-            if self.training:
-                m4_dia = m4
-                gdt_label_main_4 = gdt_gt * F.interpolate(
-                    m4_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_4)
-                gdt_pred_4 = self.gdt_convs_pred_4(p4_gdt)
-                outs_gdt_pred.append(gdt_pred_4)
-            gdt_attn_4 = self.gdt_convs_attn_4(p4_gdt).sigmoid()
-            p4 = p4 * gdt_attn_4
+        p4_gdt = self.gdt_convs_4(p4)
+        if self.training:
+            m4_dia = m4
+            gdt_label_main_4 = gdt_gt * F.interpolate(
+                m4_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_4)
+            gdt_pred_4 = self.gdt_convs_pred_4(p4_gdt)
+            outs_gdt_pred.append(gdt_pred_4)
+        gdt_attn_4 = self.gdt_convs_attn_4(p4_gdt).sigmoid()
+        p4 = p4 * gdt_attn_4
 
         _p4 = F.interpolate(
             p4,
@@ -236,21 +214,20 @@ class Decoder(nn.Module):
         p3 = self.decoder_block3(_p3)
         m3 = self.conv_ms_spvn_3(p3) if self.training else None
 
-        if self.out_ref:
-            p3_gdt = self.gdt_convs_3(p3)
-            if self.training:
-                m3_dia = m3
-                gdt_label_main_3 = gdt_gt * F.interpolate(
-                    m3_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_3)
-                gdt_pred_3 = self.gdt_convs_pred_3(p3_gdt)
-                outs_gdt_pred.append(gdt_pred_3)
-            gdt_attn_3 = self.gdt_convs_attn_3(p3_gdt).sigmoid()
-            p3 = p3 * gdt_attn_3
+        p3_gdt = self.gdt_convs_3(p3)
+        if self.training:
+            m3_dia = m3
+            gdt_label_main_3 = gdt_gt * F.interpolate(
+                m3_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_3)
+            gdt_pred_3 = self.gdt_convs_pred_3(p3_gdt)
+            outs_gdt_pred.append(gdt_pred_3)
+        gdt_attn_3 = self.gdt_convs_attn_3(p3_gdt).sigmoid()
+        p3 = p3 * gdt_attn_3
 
         _p3 = F.interpolate(
             p3,
@@ -278,21 +255,20 @@ class Decoder(nn.Module):
         p2 = self.decoder_block2(_p2)
         m2 = self.conv_ms_spvn_2(p2) if self.training else None
 
-        if self.out_ref:
-            p2_gdt = self.gdt_convs_2(p2)
-            if self.training:
-                m2_dia = m2
-                gdt_label_main_2 = gdt_gt * F.interpolate(
-                    m2_dia,
-                    size=gdt_gt.shape[2:],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-                outs_gdt_label.append(gdt_label_main_2)
-                gdt_pred_2 = self.gdt_convs_pred_2(p2_gdt)
-                outs_gdt_pred.append(gdt_pred_2)
-            gdt_attn_2 = self.gdt_convs_attn_2(p2_gdt).sigmoid()
-            p2 = p2 * gdt_attn_2
+        p2_gdt = self.gdt_convs_2(p2)
+        if self.training:
+            m2_dia = m2
+            gdt_label_main_2 = gdt_gt * F.interpolate(
+                m2_dia,
+                size=gdt_gt.shape[2:],
+                mode="bilinear",
+                align_corners=True,
+            )
+            outs_gdt_label.append(gdt_label_main_2)
+            gdt_pred_2 = self.gdt_convs_pred_2(p2_gdt)
+            outs_gdt_pred.append(gdt_pred_2)
+        gdt_attn_2 = self.gdt_convs_attn_2(p2_gdt).sigmoid()
+        p2 = p2 * gdt_attn_2
 
         _p2 = F.interpolate(
             p2,
@@ -348,7 +324,7 @@ class Decoder(nn.Module):
             outs.append(m2)
         outs.append(p1_out)
 
-        if not (self.out_ref and self.training):
+        if not self.training:
             return outs
 
         return [outs_gdt_pred, outs_gdt_label], outs
@@ -358,7 +334,6 @@ class BiRefNet(nn.Module):
     def __init__(
         self,
         lateral_channels_in_collection: list[int] = [1536, 768, 384, 192],
-        out_ref: bool = True,
         gradient_checkpointing: bool = False,
     ) -> None:
         super().__init__()
@@ -368,7 +343,6 @@ class BiRefNet(nn.Module):
         ]
 
         self.cxt = lateral_channels_in_collection[1:][::-1][-3:]
-        self.out_ref = out_ref
 
         self.bb = build_backbone(gradient_checkpointing=gradient_checkpointing)
 
@@ -380,7 +354,6 @@ class BiRefNet(nn.Module):
 
         self.decoder = Decoder(
             channels=channels,
-            out_ref=out_ref,
         )
 
     def forward_enc(
@@ -469,7 +442,7 @@ class BiRefNet(nn.Module):
 
         features = [x, x1, x2, x3, x4]
 
-        if self.training and self.out_ref:
+        if self.training:
             features.append(laplacian(torch.mean(x, dim=1).unsqueeze(1), kernel_size=5))
 
         scaled_preds = self.decoder(features)
