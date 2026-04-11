@@ -433,10 +433,7 @@ class BiRefNet(nn.Module):
 
     def forward_enc(
         self, x: torch.Tensor
-    ) -> tuple[
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
-        torch.Tensor | None,
-    ]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x1, x2, x3, x4 = self.bb(x)
 
         B, C, H, W = x.shape
@@ -493,8 +490,6 @@ class BiRefNet(nn.Module):
             dim=1,
         )
 
-        class_preds = None
-
         if self.cxt:
             cxt_size = len(self.cxt)
             interpolated_features = [
@@ -511,15 +506,12 @@ class BiRefNet(nn.Module):
 
             x4 = torch.cat((*interpolated_features[-cxt_size:], x4), dim=1)
 
-        return (x1, x2, x3, x4), class_preds
+        return (x1, x2, x3, x4)
 
     def forward_ori(
         self, x: torch.Tensor
-    ) -> tuple[
-        list[torch.Tensor] | tuple[list[torch.Tensor], list[torch.Tensor]],
-        torch.Tensor | None,
-    ]:
-        (x1, x2, x3, x4), class_preds = self.forward_enc(x)
+    ) -> list[torch.Tensor] | tuple[list[torch.Tensor], list[torch.Tensor]]:
+        x1, x2, x3, x4 = self.forward_enc(x)
 
         x4 = self.squeeze_module(x4)
 
@@ -530,18 +522,9 @@ class BiRefNet(nn.Module):
 
         scaled_preds = self.decoder(features)
 
-        return scaled_preds, class_preds
+        return scaled_preds
 
     def forward(
         self, x: torch.Tensor
-    ) -> (
-        list[torch.Tensor]
-        | tuple[list[torch.Tensor], list[torch.Tensor | None]]
-        | torch.Tensor
-    ):
-        scaled_preds, class_preds = self.forward_ori(x)
-
-        if self.training:
-            return [scaled_preds, [class_preds]]
-
-        return scaled_preds
+    ) -> list[torch.Tensor] | tuple[list[torch.Tensor], list[torch.Tensor]]:
+        return self.forward_ori(x)

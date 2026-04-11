@@ -37,8 +37,7 @@ class LoRABiRefNet(nn.Module):
         }
 
     def _train_step(self, x: torch.Tensor) -> tuple[list[torch.Tensor], torch.Tensor]:
-        scaled_preds, _ = self.model(x)
-        (gdt_predictions, gdt_labels), predictions = scaled_preds
+        (gdt_predictions, gdt_labels), predictions = self.model(x)
 
         auxiliary_loss = torch.tensor(0.0, device=x.device)
         for gdt_prediction, gdt_label in zip(gdt_predictions, gdt_labels):
