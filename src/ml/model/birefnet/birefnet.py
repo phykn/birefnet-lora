@@ -56,11 +56,9 @@ class Decoder(nn.Module):
     def __init__(
         self,
         channels: list[int],
-        ms_supervision: bool = True,
         out_ref: bool = True,
     ) -> None:
         super().__init__()
-        self.ms_supervision = ms_supervision
         self.out_ref = out_ref
 
         ipt_blk_in_channels = [3072, 768, 192, 48, 3]
@@ -119,53 +117,52 @@ class Decoder(nn.Module):
             bb_neck_out_channels[3], dec_blk_out_channels[2]
         )
 
-        if self.ms_supervision:
-            self.conv_ms_spvn_4 = nn.Conv2d(dec_blk_out_channels[0], 1, 1)
-            self.conv_ms_spvn_3 = nn.Conv2d(dec_blk_out_channels[1], 1, 1)
-            self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
+        self.conv_ms_spvn_4 = nn.Conv2d(dec_blk_out_channels[0], 1, 1)
+        self.conv_ms_spvn_3 = nn.Conv2d(dec_blk_out_channels[1], 1, 1)
+        self.conv_ms_spvn_2 = nn.Conv2d(dec_blk_out_channels[2], 1, 1)
 
-            if self.out_ref:
-                self.gdt_convs_4 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
-                self.gdt_convs_3 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
-                self.gdt_convs_2 = nn.Sequential(
-                    nn.Conv2d(
-                        dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1
-                    ),
-                    nn.BatchNorm2d(GDT_INTER_CHANNELS),
-                    nn.ReLU(inplace=True),
-                )
+        if self.out_ref:
+            self.gdt_convs_4 = nn.Sequential(
+                nn.Conv2d(
+                    dec_blk_out_channels[0], GDT_INTER_CHANNELS, 3, padding=1
+                ),
+                nn.BatchNorm2d(GDT_INTER_CHANNELS),
+                nn.ReLU(inplace=True),
+            )
+            self.gdt_convs_3 = nn.Sequential(
+                nn.Conv2d(
+                    dec_blk_out_channels[1], GDT_INTER_CHANNELS, 3, padding=1
+                ),
+                nn.BatchNorm2d(GDT_INTER_CHANNELS),
+                nn.ReLU(inplace=True),
+            )
+            self.gdt_convs_2 = nn.Sequential(
+                nn.Conv2d(
+                    dec_blk_out_channels[2], GDT_INTER_CHANNELS, 3, padding=1
+                ),
+                nn.BatchNorm2d(GDT_INTER_CHANNELS),
+                nn.ReLU(inplace=True),
+            )
 
-                self.gdt_convs_pred_4 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_pred_3 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_pred_2 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
+            self.gdt_convs_pred_4 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
+            self.gdt_convs_pred_3 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
+            self.gdt_convs_pred_2 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
 
-                self.gdt_convs_attn_4 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_attn_3 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
-                self.gdt_convs_attn_2 = nn.Sequential(
-                    nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
-                )
+            self.gdt_convs_attn_4 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
+            self.gdt_convs_attn_3 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
+            self.gdt_convs_attn_2 = nn.Sequential(
+                nn.Conv2d(GDT_INTER_CHANNELS, 1, 1)
+            )
 
     def forward(
         self, features: list[torch.Tensor] | tuple[torch.Tensor, ...]
@@ -195,7 +192,7 @@ class Decoder(nn.Module):
         x4 = torch.cat((x4, _patched), dim=1)
 
         p4 = self.decoder_block4(x4)
-        m4 = self.conv_ms_spvn_4(p4) if self.ms_supervision and self.training else None
+        m4 = self.conv_ms_spvn_4(p4) if self.training else None
 
         if self.out_ref:
             p4_gdt = self.gdt_convs_4(p4)
@@ -237,7 +234,7 @@ class Decoder(nn.Module):
         _p3 = torch.cat((_p3, _patched), dim=1)
 
         p3 = self.decoder_block3(_p3)
-        m3 = self.conv_ms_spvn_3(p3) if self.ms_supervision and self.training else None
+        m3 = self.conv_ms_spvn_3(p3) if self.training else None
 
         if self.out_ref:
             p3_gdt = self.gdt_convs_3(p3)
@@ -279,7 +276,7 @@ class Decoder(nn.Module):
         _p2 = torch.cat((_p2, _patched), dim=1)
 
         p2 = self.decoder_block2(_p2)
-        m2 = self.conv_ms_spvn_2(p2) if self.ms_supervision and self.training else None
+        m2 = self.conv_ms_spvn_2(p2) if self.training else None
 
         if self.out_ref:
             p2_gdt = self.gdt_convs_2(p2)
@@ -345,7 +342,7 @@ class Decoder(nn.Module):
 
         p1_out = self.conv_out1(_p1)
 
-        if self.ms_supervision and self.training:
+        if self.training:
             outs.append(m4)
             outs.append(m3)
             outs.append(m2)
@@ -361,7 +358,6 @@ class BiRefNet(nn.Module):
     def __init__(
         self,
         lateral_channels_in_collection: list[int] = [1536, 768, 384, 192],
-        ms_supervision: bool = True,
         out_ref: bool = True,
         gradient_checkpointing: bool = False,
     ) -> None:
@@ -384,7 +380,6 @@ class BiRefNet(nn.Module):
 
         self.decoder = Decoder(
             channels=channels,
-            ms_supervision=ms_supervision,
             out_ref=out_ref,
         )
 
