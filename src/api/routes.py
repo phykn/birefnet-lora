@@ -34,8 +34,8 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid image") from exc
 
-    want_prob_map = body.threshold < 0
-    threshold = None if want_prob_map else body.threshold
+    want_prob_map = body.threshold is None
+    threshold = body.threshold
 
     async with request.app.state.predict_sem:
         result = await run_in_threadpool(

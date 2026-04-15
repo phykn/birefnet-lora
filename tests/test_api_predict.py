@@ -20,7 +20,7 @@ def _image_data(arr: np.ndarray) -> dict:
     }
 
 
-def test_predict_binary_mask_default_threshold(monkeypatch, api_client):
+def test_predict_binary_mask_with_threshold(monkeypatch, api_client):
     captured = {}
 
     def fake_predict(model, image, threshold=0.5):
@@ -32,7 +32,7 @@ def test_predict_binary_mask_default_threshold(monkeypatch, api_client):
     client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.random.randint(0, 255, (16, 24, 3), dtype=np.uint8)
-    response = client.post("/predict", json=_image_data(img))
+    response = client.post("/predict", json={**_image_data(img), "threshold": 0.5})
 
     assert response.status_code == 200
     payload = response.json()
@@ -91,7 +91,7 @@ def test_predict_skips_empty_cache_on_cpu_device(monkeypatch, api_client):
     assert calls["empty_cache"] == 0
 
 
-def test_predict_probability_map_when_threshold_negative(monkeypatch, api_client):
+def test_predict_probability_map_when_threshold_omitted(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         assert threshold is None
         return np.full(image.shape[:2], 0.5, dtype=np.float32)
@@ -100,9 +100,7 @@ def test_predict_probability_map_when_threshold_negative(monkeypatch, api_client
     client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((8, 8, 3), dtype=np.uint8)
-    response = client.post(
-        "/predict", json={**_image_data(img), "threshold": -1.0}
-    )
+    response = client.post("/predict", json=_image_data(img))
 
     assert response.status_code == 200
     mask = decode(response.json()["base64_str"])

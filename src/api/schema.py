@@ -7,6 +7,7 @@ class HealthResponse(BaseModel):
 
 
 class ImageData(BaseModel):
+    id: str | None = None
     base64_str: str
     height: int | None
     width: int | None
@@ -14,9 +15,9 @@ class ImageData(BaseModel):
 
 
 class PredictRequest(ImageData):
-    threshold: float = Field(
-        0.5,
-        ge=-1.0,
+    threshold: float | None = Field(
+        None,
+        ge=0.0,
         le=1.0,
     )
 
