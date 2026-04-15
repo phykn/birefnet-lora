@@ -42,8 +42,6 @@ def main() -> None:
     args = _parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
 
     model = _load_model(args.weight, device)
     app = build_app(model=model, device=device, max_concurrency=args.max_concurrency)

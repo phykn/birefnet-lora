@@ -57,8 +57,6 @@ def main() -> None:
         OmegaConf.load("src/config/model.yaml"),
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
 
     base_model = build_birefnet(cfg=cfg).to(device)
     model = build_lora_birefnet_for_training(cfg=cfg, model=base_model)
