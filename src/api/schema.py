@@ -13,8 +13,7 @@ class ImageData(BaseModel):
     channels: int | None
 
 
-class PredictRequest(BaseModel):
-    image: ImageData
+class PredictRequest(ImageData):
     threshold: float = Field(
         0.5,
         ge=-1.0,
@@ -22,5 +21,5 @@ class PredictRequest(BaseModel):
     )
 
 
-class PredictResponse(BaseModel):
-    mask: ImageData
+class PredictResponse(ImageData):
+    pass

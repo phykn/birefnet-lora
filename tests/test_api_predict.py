@@ -32,10 +32,10 @@ def test_predict_binary_mask_default_threshold(monkeypatch, api_client):
     client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.random.randint(0, 255, (16, 24, 3), dtype=np.uint8)
-    response = client.post("/predict", json={"image": _image_data(img)})
+    response = client.post("/predict", json=_image_data(img))
 
     assert response.status_code == 200
-    payload = response.json()["mask"]
+    payload = response.json()
     assert payload["height"] == 16
     assert payload["width"] == 24
     assert payload["channels"] is None
@@ -63,7 +63,7 @@ def test_predict_releases_cuda_cache_on_cuda_device(monkeypatch, api_client):
     client = api_client(model=object(), device=torch.device("cuda"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
-    response = client.post("/predict", json={"image": _image_data(img)})
+    response = client.post("/predict", json=_image_data(img))
 
     assert response.status_code == 200
     assert calls["empty_cache"] == 1
@@ -85,7 +85,7 @@ def test_predict_skips_empty_cache_on_cpu_device(monkeypatch, api_client):
     client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
-    response = client.post("/predict", json={"image": _image_data(img)})
+    response = client.post("/predict", json=_image_data(img))
 
     assert response.status_code == 200
     assert calls["empty_cache"] == 0
@@ -101,11 +101,11 @@ def test_predict_probability_map_when_threshold_negative(monkeypatch, api_client
 
     img = np.zeros((8, 8, 3), dtype=np.uint8)
     response = client.post(
-        "/predict", json={"image": _image_data(img), "threshold": -1.0}
+        "/predict", json={**_image_data(img), "threshold": -1.0}
     )
 
     assert response.status_code == 200
-    mask = decode(response.json()["mask"]["base64_str"])
+    mask = decode(response.json()["base64_str"])
     assert mask.dtype == np.uint8
     assert mask.shape[:2] == (8, 8)
     assert (mask == 127).all()
@@ -121,12 +121,10 @@ def test_predict_rejects_invalid_image(monkeypatch, api_client):
     response = client.post(
         "/predict",
         json={
-            "image": {
-                "base64_str": "not-a-real-imstr",
-                "height": None,
-                "width": None,
-                "channels": None,
-            }
+            "base64_str": "not-a-real-imstr",
+            "height": None,
+            "width": None,
+            "channels": None,
         },
     )
 
@@ -143,7 +141,7 @@ def test_predict_rejects_threshold_out_of_range(monkeypatch, api_client):
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
     response = client.post(
-        "/predict", json={"image": _image_data(img), "threshold": 2.0}
+        "/predict", json={**_image_data(img), "threshold": 2.0}
     )
 
     assert response.status_code == 422
