@@ -16,7 +16,7 @@ def _image_data(arr: np.ndarray) -> dict:
         "base64_str": encode(arr),
         "height": h,
         "width": w,
-        "channels": c,
+        "channel": c,
     }
 
 
@@ -38,7 +38,7 @@ def test_predict_binary_mask_with_threshold(monkeypatch, api_client):
     payload = response.json()
     assert payload["height"] == 16
     assert payload["width"] == 24
-    assert payload["channels"] is None
+    assert payload["channel"] is None
     mask = decode(payload["base64_str"])
     assert mask.dtype == np.uint8
     assert mask.shape[:2] == (16, 24)
@@ -122,7 +122,7 @@ def test_predict_rejects_invalid_image(monkeypatch, api_client):
             "base64_str": "not-a-real-imstr",
             "height": None,
             "width": None,
-            "channels": None,
+            "channel": None,
         },
     )
 
