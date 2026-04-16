@@ -3,6 +3,14 @@ import numpy as np
 
 from sdimg.image import to_gray, zscore_norm, clahe_norm
 
+MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
+STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
+
+
+def normalize(image: np.ndarray) -> np.ndarray:
+    x = image.astype(np.float32) / 255.0
+    return (x - MEAN) / STD
+
 
 def _norm(gray: np.ndarray) -> np.ndarray:
     x = zscore_norm(gray, std_range=3.0)
