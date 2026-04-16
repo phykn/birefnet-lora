@@ -15,8 +15,8 @@ def _patch_axis(length: int, n: int, overlap: float) -> tuple[list[int], int]:
 
 def split(
     src: np.ndarray,
-    n_h: int,
     n_w: int,
+    n_h: int,
     overlap: float = 0.2,
 ) -> tuple[list[np.ndarray], list[tuple[int, int, int, int]]]:
     h, w = src.shape[:2]

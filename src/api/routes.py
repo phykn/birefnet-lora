@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from imstr import decode, encode
 
-from src.ml.inference.predict import predict as run_predict
+from src.ml.inference.predict import auto_predict as run_predict
 
 from .schema import HealthResponse, PredictRequest, PredictResponse
 

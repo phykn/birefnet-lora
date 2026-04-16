@@ -21,16 +21,17 @@ def predict(
     model: torch.nn.Module,
     image: np.ndarray,
     size: int = 1024,
-    threshold: float | None = 0.5,
+    threshold: float | None = None,
     n: int | tuple[int, int] = 1,
+    overlap: float = 0.1,
 ) -> np.ndarray:
     model.eval()
     device = next(model.parameters()).device
     h, w = image.shape[:2]
-    n_h, n_w = (n, n) if isinstance(n, int) else n
+    n_w, n_h = (n, n) if isinstance(n, int) else n
 
     # 1. split → preprocess → prepare → batch
-    patches, boxes = split(image, n_h, n_w)
+    patches, boxes = split(image, n_w, n_h, overlap=overlap)
     batch = np.stack([_prepare(preprocess(p), size) for p in patches])
     x = torch.from_numpy(batch).to(device)
 
@@ -63,5 +64,25 @@ def predict(
     prob = 1.0 / (1.0 + np.exp(-merged))
 
     if threshold is None:
-        return (prob * 255).astype(np.uint8)
+        return np.rint(prob * 255).astype(np.uint8)
     return (prob > threshold).astype(np.uint8) * 255
+
+
+def auto_predict(
+    model: torch.nn.Module,
+    image: np.ndarray,
+    size: int = 1024,
+    threshold: float | None = None,
+) -> np.ndarray:
+    h, w = image.shape[:2]
+    n_h = 2 if h > 768 else 1
+    n_w = 2 if w > 768 else 1
+
+    return predict(
+        model=model,
+        image=image,
+        size=size,
+        threshold=threshold,
+        n=(n_w, n_h),
+        overlap=0.1,
+    )
