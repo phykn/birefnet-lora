@@ -24,16 +24,21 @@ def predict(
     threshold: float | None = None,
     n: int | tuple[int, int] = 1,
     overlap: float = 0.1,
+    ensemble: bool = False,
 ) -> np.ndarray:
     model.eval()
     device = next(model.parameters()).device
     h, w = image.shape[:2]
     n_w, n_h = (n, n) if isinstance(n, int) else n
+    needs_tiling = n_w > 1 or n_h > 1
+    use_ensemble = ensemble and needs_tiling
 
     # 1. split → preprocess → prepare → batch
     patches, boxes = split(image, n_w, n_h, overlap=overlap)
-    batch = np.stack([_prepare(preprocess(p), size) for p in patches])
-    x = torch.from_numpy(batch).to(device)
+    prepared = [_prepare(preprocess(p), size) for p in patches]
+    if use_ensemble:
+        prepared.append(_prepare(preprocess(image), size))
+    x = torch.from_numpy(np.stack(prepared)).to(device)
 
     # 2. inference
     if device.type == "cuda":
@@ -49,7 +54,7 @@ def predict(
     with autocast_ctx:
         logits = model(x).preds[-1]
 
-    # 3. interpolate each logit back to patch size → merge → sigmoid
+    # 3. interpolate tile logits → merge
     logit_patches = []
     for i, (hmin, wmin, hmax, wmax) in enumerate(boxes):
         patch_logit = torch.nn.functional.interpolate(
@@ -61,8 +66,19 @@ def predict(
         logit_patches.append(patch_logit[0, 0].float().cpu().numpy())
 
     merged = merge_logits(logit_patches, boxes, h, w)
-    prob = 1.0 / (1.0 + np.exp(-merged))
 
+    # 4. ensemble: average tile logits with full-image logit
+    if use_ensemble:
+        full_logit = torch.nn.functional.interpolate(
+            logits[-1:],
+            size=(h, w),
+            mode="bilinear",
+            align_corners=True,
+        )
+        merged = (merged + full_logit[0, 0].float().cpu().numpy()) / 2.0
+
+    # 5. sigmoid → uint8
+    prob = 1.0 / (1.0 + np.exp(-merged))
     if threshold is None:
         return np.rint(prob * 255).astype(np.uint8)
     return (prob > threshold).astype(np.uint8) * 255
@@ -73,6 +89,7 @@ def auto_predict(
     image: np.ndarray,
     size: int = 1024,
     threshold: float | None = None,
+    ensemble: bool = True,
 ) -> np.ndarray:
     h, w = image.shape[:2]
     n_h = 2 if h > 768 else 1
@@ -85,4 +102,5 @@ def auto_predict(
         threshold=threshold,
         n=(n_w, n_h),
         overlap=0.1,
+        ensemble=ensemble,
     )

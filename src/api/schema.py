@@ -9,9 +9,9 @@ class HealthResponse(BaseModel):
 class ImageData(BaseModel):
     id: str | None = None
     base64_str: str
-    height: int | None
-    width: int | None
-    channel: int | None
+    height: int | None = None
+    width: int | None = None
+    channel: int | None = None
 
 
 class PredictRequest(ImageData):
