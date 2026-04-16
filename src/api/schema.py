@@ -11,7 +11,7 @@ class ImageData(BaseModel):
     base64_str: str
     height: int | None
     width: int | None
-    channels: int | None
+    channel: int | None
 
 
 class PredictRequest(ImageData):

@@ -13,12 +13,12 @@ router = APIRouter()
 
 def _to_predict_response(arr: np.ndarray) -> PredictResponse:
     height, width = arr.shape[:2]
-    channels = arr.shape[2] if arr.ndim == 3 else None
+    channel = arr.shape[2] if arr.ndim == 3 else None
     return PredictResponse(
         base64_str=encode(arr),
         height=height,
         width=width,
-        channels=channels,
+        channel=channel,
     )
 
 
