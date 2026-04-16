@@ -6,16 +6,13 @@ import torch
 
 from sdimg.spatial import resize
 
-from ..data.preprocess import preprocess
+from ..preprocess import normalize, preprocess
 from .tile import merge_logits, split
-
-MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
-STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
 
 
 def _prepare(image: np.ndarray, size: int) -> np.ndarray:
     x = resize(image, height=size, width=size, interpolation=cv2.INTER_CUBIC)
-    x = (x.astype(np.float32) / 255.0 - MEAN) / STD
+    x = normalize(x)
     return np.transpose(x, (2, 0, 1))
 
 
