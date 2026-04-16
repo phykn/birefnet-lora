@@ -31,5 +31,6 @@ train:
 loss:
   lambda_bce: 30.0
   lambda_iou: 0.5
-  lambda_kl: 1.0
+  lambda_kl: 10.0
   lambda_aux: 1.0
+  lambda_mae: 100.0

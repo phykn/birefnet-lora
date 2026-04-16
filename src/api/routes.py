@@ -34,17 +34,11 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid image") from exc
 
-    want_prob_map = body.threshold is None
-    threshold = body.threshold
-
     async with request.app.state.predict_sem:
         result = await run_in_threadpool(
-            run_predict, request.app.state.model, image, threshold=threshold
+            run_predict, request.app.state.model, image, threshold=body.threshold
         )
         if request.app.state.device.type == "cuda":
             torch.cuda.empty_cache()
-
-    if want_prob_map:
-        result = (result * 255).astype(np.uint8)
 
     return _to_predict_response(result)

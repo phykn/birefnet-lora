@@ -133,6 +133,7 @@ def build_trainer(
         lambda_iou=cfg.loss.lambda_iou,
         lambda_kl=cfg.loss.lambda_kl,
         lambda_aux=cfg.loss.lambda_aux,
+        lambda_mae=cfg.loss.lambda_mae,
     )
 
     optimizer = torch.optim.AdamW(

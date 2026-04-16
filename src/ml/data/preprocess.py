@@ -13,7 +13,14 @@ def _norm(gray: np.ndarray) -> np.ndarray:
 
 
 def _sharpen(gray: np.ndarray) -> np.ndarray:
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    try:
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    except Exception:
+        try:
+            blur = cv2.medianBlur(gray, 5)
+        except Exception:
+            return gray.copy()
+
     return cv2.addWeighted(gray, 1.5, blur, -0.5, 0)
 
 

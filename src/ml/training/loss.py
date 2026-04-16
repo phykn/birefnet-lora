@@ -53,6 +53,17 @@ class SymmetricBinaryKLLoss(nn.Module):
         return self.lambda_kl * 0.5 * kl.mean()
 
 
+class MAELoss(nn.Module):
+    def __init__(self, lambda_mae: float = 1.0):
+        super().__init__()
+        self.lambda_mae = lambda_mae
+
+    def forward(self, logits_1: torch.Tensor, logits_2: torch.Tensor) -> torch.Tensor:
+        m_1 = torch.sigmoid(logits_1).mean()
+        m_2 = torch.sigmoid(logits_2).mean()
+        return self.lambda_mae * (m_1 - m_2).abs()
+
+
 class CustomLoss(nn.Module):
     def __init__(
         self,
@@ -60,10 +71,12 @@ class CustomLoss(nn.Module):
         lambda_iou: float = 0.5,
         lambda_kl: float = 1.0,
         lambda_aux: float = 1.0,
+        lambda_mae: float = 1.0,
     ):
         super().__init__()
         self.seg = SegmentationLoss(lambda_bce=lambda_bce, lambda_iou=lambda_iou)
-        self.cons = SymmetricBinaryKLLoss(lambda_kl=lambda_kl)
+        self.con = SymmetricBinaryKLLoss(lambda_kl=lambda_kl)
+        self.mae = MAELoss(lambda_mae=lambda_mae)
         self.lambda_aux = lambda_aux
 
     def forward(
@@ -81,19 +94,25 @@ class CustomLoss(nn.Module):
             out: ModelOutput = model(images)
             preds = out.preds
 
+            logits_1 = preds[-1][:batch_size]
+            logits_2 = preds[-1][batch_size:]
+
             seg_loss = sum(self.seg(p, masks) for p in preds) / len(preds)
-            cons_loss = self.cons(preds[-1][:batch_size], preds[-1][batch_size:])
+            con_loss = self.con(logits_1, logits_2)
+            mae_loss = self.mae(logits_1, logits_2)
             aux_loss = self.lambda_aux * (
                 out.aux if out.aux is not None else torch.tensor(0.0, device=device)
             )
-            loss = seg_loss + cons_loss + aux_loss
 
-            return {
+            loss = seg_loss + con_loss + mae_loss + aux_loss
+            loss_dict = {
                 "loss": loss,
                 "seg": seg_loss,
-                "cons": cons_loss,
+                "con": con_loss,
+                "mae": mae_loss,
                 "aux": aux_loss,
-            }, loss
+            }
+            return loss_dict, loss
 
         out = model(image_1)
         pred = out.preds[-1]

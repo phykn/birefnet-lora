@@ -94,7 +94,7 @@ def test_predict_skips_empty_cache_on_cpu_device(monkeypatch, api_client):
 def test_predict_probability_map_when_threshold_omitted(monkeypatch, api_client):
     def fake_predict(model, image, threshold=0.5):
         assert threshold is None
-        return np.full(image.shape[:2], 0.5, dtype=np.float32)
+        return np.full(image.shape[:2], 127, dtype=np.uint8)
 
     _patch_predict(monkeypatch, fake_predict)
     client = api_client(model=object(), device=torch.device("cpu"))
@@ -138,8 +138,6 @@ def test_predict_rejects_threshold_out_of_range(monkeypatch, api_client):
     client = api_client(model=object(), device=torch.device("cpu"))
 
     img = np.zeros((4, 4, 3), dtype=np.uint8)
-    response = client.post(
-        "/predict", json={**_image_data(img), "threshold": 2.0}
-    )
+    response = client.post("/predict", json={**_image_data(img), "threshold": 2.0})
 
     assert response.status_code == 422
