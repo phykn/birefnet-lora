@@ -86,7 +86,7 @@ def test_custom_loss_train_mode_returns_all_terms():
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
     }
     loss_dict, loss = CustomLoss()(model, batch)
-    assert {"loss", "seg", "cons", "aux"} <= set(loss_dict.keys())
+    assert {"loss", "seg", "con", "mae", "aux"} <= set(loss_dict.keys())
     assert torch.isclose(loss, loss_dict["loss"])
     loss.backward()
     assert model.conv.weight.grad is not None
