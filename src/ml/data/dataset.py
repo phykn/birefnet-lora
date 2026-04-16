@@ -11,11 +11,7 @@ from sdimg.image import to_gray, adjust_brightness_contrast
 from sdimg.spatial import resize
 
 from .augment import random_crop, random_flip
-from .preprocess import preprocess
-
-
-MEAN = [0.485, 0.456, 0.406]
-STD = [0.229, 0.224, 0.225]
+from ..preprocess import normalize, preprocess
 
 
 class Dataset:
@@ -34,9 +30,6 @@ class Dataset:
         self.train = train
         self.bc_weak_range = bc_weak
         self.bc_strong_range = bc_strong
-
-        self.mean = np.array(MEAN, dtype=np.float32).reshape(1, 1, 3)
-        self.std = np.array(STD, dtype=np.float32).reshape(1, 1, 3)
 
     def __len__(self):
         return len(self.data)
@@ -80,12 +73,8 @@ class Dataset:
         image = resize(
             image, height=self.size, width=self.size, interpolation=cv2.INTER_CUBIC
         )
-        image = self.norm(image)
+        image = normalize(image)
         return np.transpose(image, (2, 0, 1))
-
-    def norm(self, image: np.ndarray) -> np.ndarray:
-        x = image.astype(np.float32) / 255.0
-        return (x - self.mean) / self.std
 
     def to_binary(self, mask: np.ndarray) -> np.ndarray:
         return (to_gray(mask) > 127).astype(np.float32)
