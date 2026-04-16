@@ -24,19 +24,17 @@ def predict(
     threshold: float | None = None,
     n: int | tuple[int, int] = 1,
     overlap: float = 0.1,
-    ensemble: bool = False,
 ) -> np.ndarray:
     model.eval()
     device = next(model.parameters()).device
     h, w = image.shape[:2]
     n_w, n_h = (n, n) if isinstance(n, int) else n
     needs_tiling = n_w > 1 or n_h > 1
-    use_ensemble = ensemble and needs_tiling
 
     # 1. split → preprocess → prepare → batch
     patches, boxes = split(image, n_w, n_h, overlap=overlap)
     prepared = [_prepare(preprocess(p), size) for p in patches]
-    if use_ensemble:
+    if needs_tiling:
         prepared.append(_prepare(preprocess(image), size))
     x = torch.from_numpy(np.stack(prepared)).to(device)
 
@@ -68,7 +66,7 @@ def predict(
     merged = merge_logits(logit_patches, boxes, h, w)
 
     # 4. ensemble: average tile logits with full-image logit
-    if use_ensemble:
+    if needs_tiling:
         full_logit = torch.nn.functional.interpolate(
             logits[-1:],
             size=(h, w),
@@ -89,7 +87,6 @@ def auto_predict(
     image: np.ndarray,
     size: int = 1024,
     threshold: float | None = None,
-    ensemble: bool = True,
 ) -> np.ndarray:
     h, w = image.shape[:2]
     n_h = 2 if h > 768 else 1
@@ -101,6 +98,5 @@ def auto_predict(
         size=size,
         threshold=threshold,
         n=(n_w, n_h),
-        overlap=0.1,
-        ensemble=ensemble,
+        overlap=0.5,
     )
