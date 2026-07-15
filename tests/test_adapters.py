@@ -1,12 +1,8 @@
 import torch
 import torch.nn as nn
 
-from src.ml.model.lora.adapters import (
-    LoRAConv2d,
-    LoRALinear,
-    apply_conv2d,
-    apply_linear,
-)
+from src.model.lora.inject import inject_conv, inject_linear
+from src.model.lora.layers import LoRAConv2d, LoRALinear
 
 
 def test_lora_linear_initially_identity():
@@ -58,7 +54,7 @@ def test_apply_linear_replaces_all_linears():
             return self.fc2(self.fc1(x))
 
     net = Net()
-    apply_linear(net, rank=2, alpha=4.0)
+    inject_linear(net, rank=2, alpha=4.0)
     assert isinstance(net.fc1, LoRALinear)
     assert isinstance(net.fc2, LoRALinear)
     out = net(torch.randn(1, 4))
@@ -73,7 +69,7 @@ def test_apply_conv2d_respects_excludes():
             self.offset_conv = nn.Conv2d(4, 4, 3, padding=1)
 
     net = Net()
-    apply_conv2d(net, rank=2, alpha=4.0, exclude_names=["offset_conv"])
+    inject_conv(net, rank=2, alpha=4.0, exclude_names=["offset_conv"])
     assert isinstance(net.conv, LoRAConv2d)
     assert isinstance(net.offset_conv, nn.Conv2d)
     assert not isinstance(net.offset_conv, LoRAConv2d)

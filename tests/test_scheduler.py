@@ -1,12 +1,12 @@
 import torch
 
-from src.ml.training.scheduler import CosineAnnealingWarmupRestarts
+from src.train.schedule import CosineSchedule
 
 
 def _make(max_lr=1.0, min_lr=0.0, warmup=5, total=20):
     param = torch.nn.Parameter(torch.zeros(1))
     opt = torch.optim.SGD([param], lr=0.0)
-    sched = CosineAnnealingWarmupRestarts(
+    sched = CosineSchedule(
         optimizer=opt,
         first_cycle_steps=total,
         max_lr=max_lr,
@@ -47,3 +47,24 @@ def test_cosine_decays_to_min_lr_at_end_of_cycle():
     for _ in range(20):
         sched.step()
     assert abs(_lr(opt) - 0.01) < 1e-6
+
+
+def test_parameter_groups_keep_their_lr_scale():
+    params = [torch.nn.Parameter(torch.zeros(1)) for _ in range(2)]
+    opt = torch.optim.SGD(
+        [
+            {"params": [params[0]], "max_lr": 1.0, "min_lr": 0.1},
+            {"params": [params[1]], "max_lr": 0.5, "min_lr": 0.05},
+        ]
+    )
+    sched = CosineSchedule(
+        optimizer=opt,
+        first_cycle_steps=20,
+        max_lr=1.0,
+        min_lr=0.1,
+        warmup_steps=5,
+    )
+    for _ in range(20):
+        lrs = [group["lr"] for group in opt.param_groups]
+        assert abs(lrs[1] - 0.5 * lrs[0]) < 1e-9
+        sched.step()

@@ -8,3 +8,9 @@ def test_health_returns_ok_and_device(api_client):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "device": "cpu"}
+
+
+def test_predict_concurrency_is_one(api_client):
+    client = api_client(model=None, device=torch.device("cpu"))
+
+    assert client.app.state.predict_sem._value == 1

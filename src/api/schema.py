@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+from .codec import MAX_BASE64_LENGTH
 
 
 class HealthResponse(BaseModel):
@@ -6,21 +10,20 @@ class HealthResponse(BaseModel):
     device: str
 
 
-class ImageData(BaseModel):
+class PredictRequest(BaseModel):
     id: str | None = None
+    base64_str: str = Field(min_length=4, max_length=MAX_BASE64_LENGTH)
+    output_mode: Literal["binary", "probability"] = "binary"
+    threshold: float | None = Field(None, ge=0.0, le=1.0)
+
+
+class PredictResponse(BaseModel):
+    id: str | None
     base64_str: str
-    height: int | None = None
-    width: int | None = None
-    channel: int | None = None
-
-
-class PredictRequest(ImageData):
-    threshold: float | None = Field(
-        None,
-        ge=0.0,
-        le=1.0,
-    )
-
-
-class PredictResponse(ImageData):
-    pass
+    height: int
+    width: int
+    channel: int | None
+    output_mode: Literal["binary", "probability"]
+    dtype: Literal["uint8"] = "uint8"
+    value_range: tuple[int, int] = (0, 255)
+    threshold_applied: float | None

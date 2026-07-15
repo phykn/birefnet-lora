@@ -1,44 +1,57 @@
-import numpy as np
-import torch
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from imstr import decode, encode
 
-from src.ml.inference.predict import auto_predict as run_predict
+from ..infer.predict import predict as run_predict
 
+from .codec import ImageLimitError, decode, encode
 from .schema import HealthResponse, PredictRequest, PredictResponse
 
 router = APIRouter()
 
 
-def _to_predict_response(arr: np.ndarray) -> PredictResponse:
-    height, width = arr.shape[:2]
-    channel = arr.shape[2] if arr.ndim == 3 else None
-    return PredictResponse(
-        base64_str=encode(arr),
-        height=height,
-        width=width,
-        channel=channel,
-    )
-
-
 @router.get("/health", response_model=HealthResponse)
-async def health(request: Request) -> HealthResponse:
+async def check_health(request: Request) -> HealthResponse:
     return HealthResponse(status="ok", device=request.app.state.device.type)
 
 
 @router.post("/predict", response_model=PredictResponse)
 async def predict(request: Request, body: PredictRequest) -> PredictResponse:
-    try:
-        image = decode(body.base64_str)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="invalid image") from exc
+    threshold = body.threshold
+    if threshold is None:
+        threshold = request.app.state.threshold
+    if threshold is None:
+        threshold = request.app.state.settings["default_threshold"]
 
+    settings = request.app.state.settings
     async with request.app.state.predict_sem:
-        result = await run_in_threadpool(
-            run_predict, request.app.state.model, image, threshold=body.threshold
-        )
-        if request.app.state.device.type == "cuda":
-            torch.cuda.empty_cache()
+        try:
+            image = await run_in_threadpool(decode, body.base64_str)
+        except ImageLimitError as exc:
+            raise HTTPException(status_code=413, detail="image too large") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid image") from exc
 
-    return _to_predict_response(result)
+        result = await run_in_threadpool(
+            run_predict,
+            request.app.state.model,
+            image,
+            output_mode=body.output_mode,
+            threshold=threshold,
+            size=settings["size"],
+            mode=settings["mode"],
+            overlap_ratio=settings["overlap_ratio"],
+            tile_batch=settings["tile_batch"],
+            context_weight=settings["context_weight"],
+        )
+        encoded = await run_in_threadpool(encode, result)
+
+    height, width = result.shape[:2]
+    return PredictResponse(
+        id=body.id,
+        base64_str=encoded,
+        height=height,
+        width=width,
+        channel=result.shape[2] if result.ndim == 3 else None,
+        output_mode=body.output_mode,
+        threshold_applied=threshold if body.output_mode == "binary" else None,
+    )

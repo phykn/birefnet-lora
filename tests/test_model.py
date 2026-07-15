@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 
-from src.ml.model.birefnet.backbones.swin_v1 import BasicLayer
-from src.ml.model.lora.adapters import LoRAConv2d, LoRALinear, apply_linear
-from src.ml.model.lora.wrapper import LoRABiRefNet
+from src.model.birefnet.swin import BasicLayer
+from src.model.lora.inject import inject_linear
+from src.model.lora.layers import LoRAConv2d, LoRALinear
+from src.model.lora.model import LoRABiRefNet
 
 
 class _Decoder(nn.Module):
@@ -29,6 +30,7 @@ class _FakeBiRefNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.bb = _Backbone()
+        self.squeeze_module = _Decoder()
         self.decoder = _Decoder()
 
     def forward(self, x):
@@ -56,10 +58,32 @@ def test_lora_birefnet_excludes_geometry_convs_in_decoder():
     assert not isinstance(dec.regular_conv, LoRAConv2d)
 
 
+def test_lora_birefnet_applies_lora_to_squeeze_module():
+    lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
+    squeeze = lora.model.squeeze_module
+    assert isinstance(squeeze.conv, LoRAConv2d)
+    assert not isinstance(squeeze.offset_conv, LoRAConv2d)
+    assert not isinstance(squeeze.modulator_conv, LoRAConv2d)
+    assert not isinstance(squeeze.regular_conv, LoRAConv2d)
+
+
 def test_lora_birefnet_applies_lora_to_backbone_linears():
     lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
     assert isinstance(lora.model.bb.fc1, LoRALinear)
     assert isinstance(lora.model.bb.fc2, LoRALinear)
+
+
+def test_zero_initialized_lora_preserves_base_eval_output():
+    class _EvalStub(_FakeBiRefNet):
+        def forward(self, x):
+            return [self.decoder.conv(x)]
+
+    base = _EvalStub().eval()
+    x = torch.randn(1, 3, 8, 8)
+    expected = base(x)[0].detach().clone()
+    wrapped = LoRABiRefNet(base, rank=2, alpha=4.0).eval()
+    actual = wrapped(x).preds[0]
+    assert torch.allclose(actual, expected)
 
 
 def test_lora_birefnet_keeps_batchnorm_in_eval_when_training():
@@ -68,29 +92,41 @@ def test_lora_birefnet_keeps_batchnorm_in_eval_when_training():
     assert lora.model.bb.bn.training is False
 
 
-def test_get_adapter_params_only_returns_trainable():
+def test_list_trainable_only_returns_trainable():
     lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
-    params = lora.get_adapter_params()
+    params = lora.list_trainable()
     assert len(params) > 0
     assert all(p.requires_grad for p in params)
 
 
-def test_save_and_load_adapters_round_trip(tmp_path):
-    lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
-    for p in lora.get_adapter_params():
+def test_overlay_round_trip_includes_lora_and_full_head(tmp_path):
+    lora = LoRABiRefNet(
+        _FakeBiRefNet(),
+        rank=2,
+        alpha=4.0,
+        trainable_heads=["decoder.conv"],
+    )
+    assert isinstance(lora.model.decoder.conv, nn.Conv2d)
+    assert not isinstance(lora.model.decoder.conv, LoRAConv2d)
+    for p in lora.list_trainable():
         with torch.no_grad():
             p.add_(torch.randn_like(p))
 
-    path = tmp_path / "adapters.pth"
-    lora.save_adapters(str(path))
+    path = tmp_path / "overlay.pth"
+    lora.save_overlay(str(path))
     assert path.exists()
 
     saved_state = {
         n: p.detach().clone() for n, p in lora.named_parameters() if p.requires_grad
     }
 
-    fresh = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
-    fresh.load_adapters(str(path))
+    fresh = LoRABiRefNet(
+        _FakeBiRefNet(),
+        rank=2,
+        alpha=4.0,
+        trainable_heads=["decoder.conv"],
+    )
+    fresh.load_overlay(str(path))
     loaded_state = {n: p for n, p in fresh.named_parameters() if p.requires_grad}
 
     assert set(saved_state.keys()) == set(loaded_state.keys())
@@ -103,7 +139,6 @@ def test_checkpointed_basic_layer_propagates_grad_to_lora_with_frozen_input():
     LoRA adapters inside frozen swin blocks still receive gradients when the
     input tensor has requires_grad=False (which is the case under LoRA training,
     since the patch_embed conv is frozen)."""
-    torch.manual_seed(0)
     dim = 12
     layer = BasicLayer(
         dim=dim,
@@ -117,7 +152,7 @@ def test_checkpointed_basic_layer_propagates_grad_to_lora_with_frozen_input():
     )
     for p in layer.parameters():
         p.requires_grad = False
-    apply_linear(layer, rank=2, alpha=4.0)
+    inject_linear(layer, rank=2, alpha=4.0)
 
     adapter_params = [p for p in layer.parameters() if p.requires_grad]
     assert len(adapter_params) > 0
@@ -135,24 +170,25 @@ def test_checkpointed_basic_layer_propagates_grad_to_lora_with_frozen_input():
     assert any(g.abs().sum() > 0 for g in grads)
 
 
-def test_load_adapters_rejects_mismatched_keys(tmp_path):
+def test_overlay_rejects_invalid_format(tmp_path):
     lora = LoRABiRefNet(_FakeBiRefNet(), rank=2, alpha=4.0)
     path = tmp_path / "bad.pth"
     torch.save({"unrelated.key": torch.zeros(1)}, str(path))
     try:
-        lora.load_adapters(str(path))
+        lora.load_overlay(str(path))
     except RuntimeError:
         return
     raise AssertionError("Expected RuntimeError on key mismatch")
 
 
 def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
-    from src.ml.model.lora.wrapper import ModelOutput
+    from src.model.lora.model import ModelOutput
 
     class _Stub(nn.Module):
         def __init__(self):
             super().__init__()
             self.bb = _Backbone()
+            self.squeeze_module = _Decoder()
             self.decoder = _Decoder()
 
         def forward(self, x):
@@ -160,7 +196,8 @@ def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
             if self.training:
                 gdt_preds = [torch.zeros(x.shape[0], 1, 4, 4)]
                 gdt_labels = [torch.zeros(x.shape[0], 1, 4, 4)]
-                return [[gdt_preds, gdt_labels], [pred, pred]]
+                scaled_preds = [[gdt_preds, gdt_labels], [pred, pred]]
+                return [scaled_preds, [None]]
             return [pred, pred]
 
     lora = LoRABiRefNet(_Stub(), rank=2, alpha=4.0)
@@ -169,10 +206,9 @@ def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
     out_train = lora(torch.randn(1, 3, 8, 8))
     assert isinstance(out_train, ModelOutput)
     assert isinstance(out_train.preds, list)
-    assert out_train.aux is not None
-    assert out_train.aux.dim() == 0
+    assert out_train.gdt is not None
 
     lora.eval()
     out_eval = lora(torch.randn(1, 3, 8, 8))
     assert isinstance(out_eval, ModelOutput)
-    assert out_eval.aux is None
+    assert out_eval.gdt is None

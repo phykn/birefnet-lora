@@ -1,0 +1,51 @@
+data:
+  image_dir: "local_data/image"
+  mask_dir: "local_data/mask"
+  size: 1024
+  valid_ratio: 0.1
+  calib_ratio: 0.1
+  mode: rgb
+  global_prob: 0.3
+  boundary_prob: 0.5
+
+augment:
+  weak:
+    brightness: 0.2
+    contrast: 0.2
+  strong:
+    brightness: 0.4
+    contrast: 0.4
+
+loader:
+  batch: 1
+  num_workers: 0
+  pin_memory: false
+
+train:
+  max_lr: 1.0e-4
+  min_lr: 1.0e-7
+  head_lr_scale: 0.5
+  weight_decay: 0.01
+  head_weight_decay: 0.0
+  warmup_steps: 50
+  max_grad_norm: 1.0
+  accum_steps: 1
+  steps: 1000
+  val_freq: 50
+  save_freq: 100
+
+loss:
+  lambda_bce: 1.0
+  region_loss: dice
+  lambda_region: 1.0
+  lambda_boundary: 1.0
+  boundary_radius: 3
+  lambda_kl: 0.0
+  lambda_aux: 1.0
+  lambda_area: 0.0
+
+inference:
+  overlap_ratio: 0.3333333333333333
+  tile_batch: 2
+  context_weight: 0.0
+  default_threshold: 0.5
