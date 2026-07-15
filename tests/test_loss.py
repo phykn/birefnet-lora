@@ -2,13 +2,12 @@ import torch
 import torch.nn as nn
 
 from src.train.loss import (
-    AreaConsistencyLoss,
     BoundaryBCELoss,
-    SymmetricBinaryKLLoss,
-    TrainLoss,
     DiceLoss,
+    GCELoss,
     IoULoss,
     SegmentationLoss,
+    TrainLoss,
 )
 
 
@@ -41,6 +40,27 @@ def test_segmentation_loss_resizes_pred():
     assert out.dim() == 0
 
 
+def test_gce_is_bounded_for_confident_wrong_label():
+    loss = GCELoss(q=0.7)(torch.tensor([[[[-100.0]]]]), torch.ones(1, 1, 1, 1))
+    assert loss.item() <= 1.0 / 0.7 + 1e-6
+
+
+def test_gce_weight_reduces_gt_loss_without_renormalizing():
+    logits = torch.zeros(1, 1, 1, 1)
+    target = torch.ones_like(logits)
+    loss_fn = GCELoss(q=0.7)
+    full = loss_fn(logits, target)
+    reduced = loss_fn(logits, target, weight=torch.full_like(target, 0.25))
+    assert torch.allclose(reduced, full * 0.25)
+
+
+def test_dice_applies_continuous_weight_once():
+    pred = torch.tensor([[[[1.0, 0.0]]]])
+    target = torch.ones_like(pred)
+    weight = torch.tensor([[[[0.5, 1.0]]]])
+    assert torch.allclose(DiceLoss()(pred, target, weight), torch.tensor(0.5))
+
+
 def test_region_losses_ignore_padding_and_define_empty_cases():
     target = torch.zeros(2, 1, 4, 4)
     valid = torch.ones_like(target)
@@ -64,36 +84,6 @@ def test_boundary_bce_ignores_padding():
     reference = BoundaryBCELoss(radius=1)(logits, target, valid)
     logits[:, :, :, 6:] = 100
     assert torch.allclose(BoundaryBCELoss(radius=1)(logits, target, valid), reference)
-
-
-def test_symmetric_binary_kl_zero_for_identical_logits():
-    logits = torch.randn(2, 1, 16, 16)
-    loss = SymmetricBinaryKLLoss()(logits, logits)
-    assert loss.item() < 1e-6
-
-
-def test_symmetric_binary_kl_positive_for_different_logits():
-    logits_1 = torch.randn(2, 1, 16, 16)
-    logits_2 = torch.randn(2, 1, 16, 16)
-    assert SymmetricBinaryKLLoss()(logits_1, logits_2).item() > 0
-
-
-def test_symmetric_binary_kl_asserts_on_shape_mismatch():
-    import pytest
-
-    logits_1 = torch.randn(2, 1, 32, 32)
-    logits_2 = torch.randn(2, 1, 16, 16)
-    with pytest.raises(AssertionError, match="matching shapes"):
-        SymmetricBinaryKLLoss()(logits_1, logits_2)
-
-
-def test_area_consistency_is_samplewise_and_masked():
-    logits_1 = torch.zeros(2, 1, 4, 4)
-    logits_2 = logits_1.clone()
-    valid = torch.ones_like(logits_1)
-    valid[:, :, :, 2:] = 0
-    logits_2[:, :, :, 2:] = 100
-    assert AreaConsistencyLoss()(logits_1, logits_2, valid).item() == 0.0
 
 
 class _TrainModel(nn.Module):
@@ -140,6 +130,15 @@ def test_gdt_loss_ignores_letterbox_padding():
     assert torch.allclose(changed, reference)
 
 
+def test_teacher_only_reduces_conflicting_confident_gt():
+    loss_fn = TrainLoss(teacher_confidence=0.95, min_gt_weight=0.25)
+    target = torch.zeros(1, 1, 1, 2)
+    teacher = torch.tensor([[[[20.0, -20.0]]]])
+    weight, confidence, _ = loss_fn._make_weight(teacher, target, scale=1.0)
+    assert torch.allclose(weight, torch.tensor([[[[0.25, 1.0]]]]))
+    assert torch.all(confidence > 0.99)
+
+
 def test_custom_loss_train_mode_returns_all_terms():
     model = _TrainModel().train()
     batch = {
@@ -152,13 +151,12 @@ def test_custom_loss_train_mode_returns_all_terms():
     assert {
         "loss",
         "seg",
-        "bce_raw",
+        "cls_raw",
         "region_raw",
         "boundary_raw",
-        "con_raw",
-        "con",
-        "area_raw",
-        "area",
+        "gt_weight",
+        "teacher_raw",
+        "teacher",
         "aux_raw",
         "aux",
     } <= set(loss_dict)
@@ -178,10 +176,10 @@ def test_custom_loss_eval_mode_returns_seg_only():
     loss_dict, loss = TrainLoss()(model, batch)
     assert {
         "seg",
-        "bce_raw",
+        "cls_raw",
         "region_raw",
         "boundary_raw",
-        "bce",
+        "cls",
         "region",
         "boundary",
     } == set(loss_dict)

@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from ..model.lora.model import LoRABiRefNet
 from ..train.loss import TrainLoss
 from ..train.schedule import CosineSchedule
+from ..train.teacher import Teacher
 from ..train.trainer import Trainer
 from .options import get
 
@@ -20,14 +21,16 @@ def build_trainer(
     calib_loader: DataLoader,
 ) -> Trainer:
     criterion = TrainLoss(
-        lambda_bce=cfg.loss.lambda_bce,
+        gce_q=cfg.loss.gce_q,
+        lambda_cls=cfg.loss.lambda_cls,
         lambda_region=cfg.loss.lambda_region,
         lambda_boundary=cfg.loss.lambda_boundary,
         region_loss=cfg.loss.region_loss,
         boundary_radius=cfg.loss.boundary_radius,
-        lambda_kl=cfg.loss.lambda_kl,
         lambda_aux=cfg.loss.lambda_aux,
-        lambda_area=cfg.loss.lambda_area,
+        teacher_confidence=cfg.teacher.confidence,
+        min_gt_weight=cfg.teacher.min_gt_weight,
+        lambda_teacher=cfg.teacher.loss_weight,
     )
 
     lora_params = []
@@ -77,6 +80,12 @@ def build_trainer(
     )
     save_dir = os.path.join("run", datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(save_dir, exist_ok=True)
+    teacher = Teacher(
+        model,
+        decay=cfg.teacher.decay,
+        start=cfg.teacher.start,
+        ramp=cfg.teacher.ramp,
+    )
     return Trainer(
         model=model,
         train_loader=train_loader,
@@ -85,6 +94,7 @@ def build_trainer(
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
+        teacher=teacher,
         save_dir=save_dir,
         max_grad_norm=cfg.train.max_grad_norm,
         accum_steps=cfg.train.accum_steps,

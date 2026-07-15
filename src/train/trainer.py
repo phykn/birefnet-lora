@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from .schedule import CosineSchedule
 from .state import CheckpointMixin
+from .teacher import Teacher
 from .validate import ValidationMixin
 
 
@@ -23,6 +24,7 @@ class Trainer(ValidationMixin, CheckpointMixin):
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: CosineSchedule,
+        teacher: Teacher,
         save_dir: str,
         max_grad_norm: float = 1.0,
         accum_steps: int = 1,
@@ -34,6 +36,7 @@ class Trainer(ValidationMixin, CheckpointMixin):
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.teacher = teacher
         self.save_dir = save_dir
         self.max_grad_norm = max_grad_norm
         self.accum_steps = accum_steps
@@ -68,12 +71,22 @@ class Trainer(ValidationMixin, CheckpointMixin):
         self.model.train()
         self.optimizer.zero_grad(set_to_none=True)
         accum: dict[str, float] = {}
+        teacher_scale = self.teacher.scale(self.global_step + 1)
         for _ in range(self.accum_steps):
             batch = self.next_batch()
             with torch.amp.autocast(
                 self.device.type, dtype=self.amp_dtype, enabled=self.use_amp
             ):
-                loss_dict, loss = self.criterion(self.model, batch)
+                teacher_logits = None
+                if teacher_scale > 0.0:
+                    image = batch["image_1"].to(self.device)
+                    teacher_logits = self.teacher.predict(self.model, image)
+                loss_dict, loss = self.criterion(
+                    self.model,
+                    batch,
+                    teacher_logits=teacher_logits,
+                    teacher_scale=teacher_scale,
+                )
             self.scaler.scale(loss / self.accum_steps).backward()
             for key, value in loss_dict.items():
                 accum[key] = accum.get(key, 0.0) + value.item() / self.accum_steps
@@ -84,6 +97,7 @@ class Trainer(ValidationMixin, CheckpointMixin):
         )
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        self.teacher.update(self.model)
         self.scheduler.step()
         self.global_step += 1
         accum["grad_norm"] = float(grad_norm)

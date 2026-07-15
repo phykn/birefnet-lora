@@ -3,7 +3,7 @@
 Retrain BiRefNet with LoRA adapters and trainable output/GDT heads while keeping the original BiRefNet checkpoint compatible.
 
 - RGB letterbox input with a valid-region mask
-- BCEWithLogits, Dice, and boundary BCE losses
+- Noise-robust GCE, Dice, boundary, and EMA-teacher losses
 - 2×2 or 3×3 tiling with at least 33% overlap
 - Logit-level cosine blending
 

@@ -10,10 +10,10 @@ data:
 
 augment:
   weak:
-    brightness: 0.2
+    brightness: 0.1
     contrast: 0.2
   strong:
-    brightness: 0.4
+    brightness: 0.2
     contrast: 0.4
 
 loader:
@@ -35,14 +35,21 @@ train:
   save_freq: 100
 
 loss:
-  lambda_bce: 1.0
+  gce_q: 0.7
+  lambda_cls: 1.0
   region_loss: dice
   lambda_region: 1.0
-  lambda_boundary: 1.0
+  lambda_boundary: 0.5
   boundary_radius: 3
-  lambda_kl: 0.0
   lambda_aux: 1.0
-  lambda_area: 0.0
+
+teacher:
+  decay: 0.99
+  start: 100
+  ramp: 100
+  confidence: 0.95
+  min_gt_weight: 0.25
+  loss_weight: 0.1
 
 inference:
   overlap_ratio: 0.3333333333333333

@@ -7,6 +7,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
 from src.train.schedule import CosineSchedule
+from src.train.teacher import Teacher
 from src.train.trainer import Trainer
 
 
@@ -44,7 +45,7 @@ class _DummyModel(nn.Module):
 
 
 class _DummyCriterion(nn.Module):
-    def forward(self, model, batch):
+    def forward(self, model, batch, teacher_logits=None, teacher_scale=0.0):
         device = next(model.parameters()).device
         if model.training:
             out = model(batch["image_1"].to(device))
@@ -89,6 +90,7 @@ def _make_trainer(tmp_path, accum_steps=1):
         min_lr=1e-4,
         warmup_steps=2,
     )
+    teacher = Teacher(model, decay=0.5, start=0, ramp=1)
     return Trainer(
         model=model,
         train_loader=train_loader,
@@ -104,6 +106,7 @@ def _make_trainer(tmp_path, accum_steps=1):
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
+        teacher=teacher,
         save_dir=str(tmp_path),
         max_grad_norm=1.0,
         accum_steps=accum_steps,
@@ -155,6 +158,7 @@ def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):
     trainer = _make_trainer(tmp_path)
     trainer.step()
     expected_weight = trainer.model.conv.weight.detach().clone()
+    expected_teacher = trainer.teacher.state_dict()
     expected_lr = trainer.optimizer.param_groups[0]["lr"]
     trainer.save()
 
@@ -164,6 +168,8 @@ def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):
     assert torch.allclose(resumed.model.conv.weight, expected_weight)
     assert resumed.optimizer.param_groups[0]["lr"] == expected_lr
     assert resumed.scheduler.step_in_cycle == trainer.scheduler.step_in_cycle
+    for name, value in expected_teacher.items():
+        assert torch.allclose(resumed.teacher.state_dict()[name], value)
 
 
 def test_calibration_and_deployment_validation_use_native_inference(tmp_path):

@@ -28,6 +28,7 @@ class CheckpointMixin:
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
             "scaler": self.scaler.state_dict(),
+            "teacher": self.teacher.state_dict(),
             "global_step": self.global_step,
             "best_region": self.best_region,
             "best_boundary": self.best_boundary,
@@ -61,6 +62,7 @@ class CheckpointMixin:
         self.optimizer.load_state_dict(state["optimizer"])
         self.scheduler.load_state_dict(state["scheduler"])
         self.scaler.load_state_dict(state["scaler"])
+        self.teacher.load_state_dict(state["teacher"])
         self.global_step = int(state["global_step"])
         self.best_region = float(state["best_region"])
         self.best_boundary = float(state["best_boundary"])

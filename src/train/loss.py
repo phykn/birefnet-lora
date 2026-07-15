@@ -26,6 +26,29 @@ def _average_masked(value: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tens
     return (value * valid_mask).sum() / denom
 
 
+class GCELoss(nn.Module):
+    def __init__(self, q: float = 0.7) -> None:
+        super().__init__()
+        if not 0.0 < q <= 1.0:
+            raise ValueError("GCE q must be in (0, 1]")
+        self.q = float(q)
+
+    def forward(
+        self,
+        logits: torch.Tensor,
+        target: torch.Tensor,
+        valid_mask: torch.Tensor | None = None,
+        weight: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if valid_mask is None:
+            valid_mask = torch.ones_like(target)
+        if weight is None:
+            weight = torch.ones_like(target)
+        bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+        loss = -torch.expm1(-self.q * bce) / self.q
+        return _average_masked(loss * weight, valid_mask)
+
+
 class IoULoss(nn.Module):
     """Sample-wise soft IoU with an explicit empty-empty=perfect contract."""
 
@@ -41,11 +64,9 @@ class IoULoss(nn.Module):
     ) -> torch.Tensor:
         if valid_mask is None:
             valid_mask = torch.ones_like(target)
-        pred = pred * valid_mask
-        target = target * valid_mask
         dims = tuple(range(1, pred.ndim))
-        intersection = (pred * target).sum(dim=dims)
-        union = pred.sum(dim=dims) + target.sum(dim=dims) - intersection
+        intersection = (pred * target * valid_mask).sum(dim=dims)
+        union = ((pred + target - pred * target) * valid_mask).sum(dim=dims)
         loss = torch.where(
             union <= self.eps,
             torch.zeros_like(union),
@@ -69,11 +90,9 @@ class DiceLoss(nn.Module):
     ) -> torch.Tensor:
         if valid_mask is None:
             valid_mask = torch.ones_like(target)
-        pred = pred * valid_mask
-        target = target * valid_mask
         dims = tuple(range(1, pred.ndim))
-        intersection = (pred * target).sum(dim=dims)
-        total = pred.sum(dim=dims) + target.sum(dim=dims)
+        intersection = (pred * target * valid_mask).sum(dim=dims)
+        total = ((pred + target) * valid_mask).sum(dim=dims)
         loss = torch.where(
             total <= self.eps,
             torch.zeros_like(total),
@@ -102,18 +121,22 @@ class BoundaryBCELoss(nn.Module):
         pred: torch.Tensor,
         target: torch.Tensor,
         valid_mask: torch.Tensor,
+        weight: torch.Tensor | None = None,
     ) -> torch.Tensor:
         active = make_band(target, self.radius) * valid_mask
         if active.sum() <= 0:
             return pred.sum() * 0.0
+        if weight is None:
+            weight = torch.ones_like(target)
         pixel_bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-        return _average_masked(pixel_bce, active)
+        return _average_masked(pixel_bce * weight, active)
 
 
 class SegmentationLoss(nn.Module):
     def __init__(
         self,
-        lambda_bce: float = 1.0,
+        gce_q: float = 0.7,
+        lambda_cls: float = 1.0,
         lambda_region: float = 1.0,
         lambda_boundary: float = 1.0,
         region_loss: str = "dice",
@@ -122,9 +145,10 @@ class SegmentationLoss(nn.Module):
         super().__init__()
         if region_loss not in {"dice", "iou"}:
             raise ValueError("region_loss must be 'dice' or 'iou'")
+        self.cls = GCELoss(q=gce_q)
         self.region = DiceLoss() if region_loss == "dice" else IoULoss()
         self.boundary = BoundaryBCELoss(radius=boundary_radius)
-        self.lambda_bce = float(lambda_bce)
+        self.lambda_cls = float(lambda_cls)
         self.lambda_region = float(lambda_region)
         self.lambda_boundary = float(lambda_boundary)
 
@@ -133,22 +157,27 @@ class SegmentationLoss(nn.Module):
         pred: torch.Tensor,
         target: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
+        weight: torch.Tensor | None = None,
         include_boundary: bool = True,
     ) -> dict[str, torch.Tensor]:
         target, valid_mask = _resize_targets(pred, target, valid_mask)
-        pixel_bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-        raw_bce = _average_masked(pixel_bce, valid_mask)
-        raw_region = self.region(pred.sigmoid(), target, valid_mask)
+        if weight is None:
+            weight = torch.ones_like(target)
+        elif weight.shape[2:] != pred.shape[2:]:
+            weight = F.interpolate(weight, size=pred.shape[2:], mode="area")
+        weight = weight.clamp(0, 1)
+        raw_cls = self.cls(pred, target, valid_mask, weight)
+        raw_region = self.region(pred.sigmoid(), target, valid_mask * weight)
         raw_boundary = (
-            self.boundary(pred, target, valid_mask)
+            self.boundary(pred, target, valid_mask, weight)
             if include_boundary
             else pred.sum() * 0.0
         )
         return {
-            "bce_raw": raw_bce,
+            "cls_raw": raw_cls,
             "region_raw": raw_region,
             "boundary_raw": raw_boundary,
-            "bce": raw_bce * self.lambda_bce,
+            "cls": raw_cls * self.lambda_cls,
             "region": raw_region * self.lambda_region,
             "boundary": raw_boundary * self.lambda_boundary,
         }
@@ -158,94 +187,51 @@ class SegmentationLoss(nn.Module):
         pred: torch.Tensor,
         target: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
+        weight: torch.Tensor | None = None,
         include_boundary: bool = True,
     ) -> torch.Tensor:
-        parts = self.compute(pred, target, valid_mask, include_boundary)
-        return parts["bce"] + parts["region"] + parts["boundary"]
-
-
-class SymmetricBinaryKLLoss(nn.Module):
-    @staticmethod
-    def _binary_kl(p_logits: torch.Tensor, q_logits: torch.Tensor) -> torch.Tensor:
-        p = torch.sigmoid(p_logits)
-        log_p, log_1mp = F.logsigmoid(p_logits), F.logsigmoid(-p_logits)
-        log_q, log_1mq = F.logsigmoid(q_logits), F.logsigmoid(-q_logits)
-        return p * (log_p - log_q) + (1 - p) * (log_1mp - log_1mq)
-
-    def forward(
-        self,
-        logits_1: torch.Tensor,
-        logits_2: torch.Tensor,
-        valid_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        if logits_1.shape != logits_2.shape:
-            raise AssertionError(
-                "SymmetricBinaryKLLoss expects matching shapes, got "
-                f"{tuple(logits_1.shape)} vs {tuple(logits_2.shape)}"
-            )
-        if valid_mask is None:
-            valid_mask = torch.ones_like(logits_1)
-        elif valid_mask.shape[2:] != logits_1.shape[2:]:
-            valid_mask = F.interpolate(
-                valid_mask, size=logits_1.shape[2:], mode="nearest"
-            )
-        kl = self._binary_kl(logits_1, logits_2) + self._binary_kl(logits_2, logits_1)
-        return 0.5 * _average_masked(kl, valid_mask)
-
-
-class AreaConsistencyLoss(nn.Module):
-    def forward(
-        self,
-        logits_1: torch.Tensor,
-        logits_2: torch.Tensor,
-        valid_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        if logits_1.shape != logits_2.shape:
-            raise AssertionError("AreaConsistencyLoss expects matching shapes")
-        if valid_mask is None:
-            valid_mask = torch.ones_like(logits_1)
-        elif valid_mask.shape[2:] != logits_1.shape[2:]:
-            valid_mask = F.interpolate(
-                valid_mask, size=logits_1.shape[2:], mode="nearest"
-            )
-        dims = tuple(range(1, logits_1.ndim))
-        denom = valid_mask.sum(dim=dims).clamp_min(1.0)
-        area_1 = (torch.sigmoid(logits_1) * valid_mask).sum(dim=dims) / denom
-        area_2 = (torch.sigmoid(logits_2) * valid_mask).sum(dim=dims) / denom
-        return (area_1 - area_2).abs().mean()
+        parts = self.compute(pred, target, valid_mask, weight, include_boundary)
+        return parts["cls"] + parts["region"] + parts["boundary"]
 
 
 class TrainLoss(nn.Module):
     def __init__(
         self,
-        lambda_bce: float = 1.0,
+        gce_q: float = 0.7,
+        lambda_cls: float = 1.0,
         lambda_region: float = 1.0,
-        lambda_boundary: float = 1.0,
+        lambda_boundary: float = 0.5,
         region_loss: str = "dice",
         boundary_radius: int = 3,
-        lambda_kl: float = 0.0,
         lambda_aux: float = 1.0,
-        lambda_area: float = 0.0,
+        teacher_confidence: float = 0.95,
+        min_gt_weight: float = 0.25,
+        lambda_teacher: float = 0.1,
     ) -> None:
         super().__init__()
+        if not 0.5 <= teacher_confidence < 1.0:
+            raise ValueError("teacher confidence must be in [0.5, 1)")
+        if not 0.0 <= min_gt_weight <= 1.0:
+            raise ValueError("minimum GT weight must be in [0, 1]")
         self.seg = SegmentationLoss(
-            lambda_bce=lambda_bce,
+            gce_q=gce_q,
+            lambda_cls=lambda_cls,
             lambda_region=lambda_region,
             lambda_boundary=lambda_boundary,
             region_loss=region_loss,
             boundary_radius=boundary_radius,
         )
-        self.con = SymmetricBinaryKLLoss()
-        self.area = AreaConsistencyLoss()
-        self.lambda_kl = float(lambda_kl)
-        self.lambda_area = float(lambda_area)
         self.lambda_aux = float(lambda_aux)
+        self.teacher_confidence = float(teacher_confidence)
+        self.min_gt_weight = float(min_gt_weight)
+        self.lambda_teacher = float(lambda_teacher)
 
     def _compute_segments(
         self,
         preds: list[torch.Tensor],
         masks: torch.Tensor,
         valid_masks: torch.Tensor,
+        weights: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         totals: dict[str, torch.Tensor] = {}
         for index, pred in enumerate(preds):
@@ -253,13 +239,70 @@ class TrainLoss(nn.Module):
                 pred,
                 masks,
                 valid_masks,
+                weights,
                 include_boundary=index == len(preds) - 1,
             )
             for key, value in parts.items():
                 weight = 1.0 if key.startswith("boundary") else 1.0 / len(preds)
                 totals[key] = totals.get(key, value * 0.0) + value * weight
-        totals["seg"] = totals["bce"] + totals["region"] + totals["boundary"]
+        totals["seg"] = totals["cls"] + totals["region"] + totals["boundary"]
         return totals
+
+    def _make_weight(
+        self,
+        teacher_logits: torch.Tensor,
+        target: torch.Tensor,
+        scale: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if teacher_logits.shape[2:] != target.shape[2:]:
+            teacher_logits = F.interpolate(
+                teacher_logits,
+                size=target.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        probability = teacher_logits.detach().sigmoid()
+        confidence = torch.maximum(probability, 1.0 - probability)
+        confidence = (
+            (confidence - self.teacher_confidence)
+            / (1.0 - self.teacher_confidence)
+        ).clamp(0, 1)
+        disagree = (probability >= 0.5) != (target >= 0.5)
+        conflict = confidence * disagree.to(confidence.dtype) * scale
+        weight = 1.0 - (1.0 - self.min_gt_weight) * conflict
+        return weight, confidence, probability
+
+    @staticmethod
+    def _compute_teacher(
+        student_logits: torch.Tensor,
+        probability: torch.Tensor,
+        confidence: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        if student_logits.shape[2:] != probability.shape[2:]:
+            probability = F.interpolate(
+                probability,
+                size=student_logits.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+            confidence = F.interpolate(
+                confidence,
+                size=student_logits.shape[2:],
+                mode="area",
+            )
+        if valid_mask.shape[2:] != student_logits.shape[2:]:
+            valid_mask = F.interpolate(
+                valid_mask,
+                size=student_logits.shape[2:],
+                mode="nearest",
+            )
+        loss = F.binary_cross_entropy_with_logits(
+            student_logits,
+            probability,
+            reduction="none",
+        )
+        return _average_masked(loss * confidence, valid_mask)
 
     @staticmethod
     def _compute_gdt(
@@ -293,7 +336,11 @@ class TrainLoss(nn.Module):
         return loss / len(preds)
 
     def forward(
-        self, model: nn.Module, batch: dict[str, torch.Tensor]
+        self,
+        model: nn.Module,
+        batch: dict[str, torch.Tensor],
+        teacher_logits: torch.Tensor | None = None,
+        teacher_scale: float = 0.0,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
         device = next(model.parameters()).device
         image_1 = batch["image_1"].to(device)
@@ -315,36 +362,45 @@ class TrainLoss(nn.Module):
 
             logits_1 = preds[-1][:batch_size]
             logits_2 = preds[-1][batch_size:]
-
-            loss_dict = self._compute_segments(preds, masks, valid_masks)
             zero = logits_1.new_zeros(())
-            con_raw = (
-                self.con(logits_1, logits_2, valid_mask)
-                if self.lambda_kl
-                else zero
-            )
-            area_raw = (
-                self.area(logits_1, logits_2, valid_mask)
-                if self.lambda_area
-                else zero
+
+            if teacher_logits is None or teacher_scale <= 0.0:
+                gt_weight = torch.ones_like(mask)
+                teacher_raw = zero
+            else:
+                gt_weight, confidence, probability = self._make_weight(
+                    teacher_logits,
+                    mask,
+                    teacher_scale,
+                )
+                teacher_raw = self._compute_teacher(
+                    logits_2,
+                    probability,
+                    confidence,
+                    valid_mask,
+                )
+            weights = torch.cat([gt_weight, gt_weight], dim=0)
+            loss_dict = self._compute_segments(
+                preds,
+                masks,
+                valid_masks,
+                weights,
             )
             aux_raw = (
                 self._compute_gdt(out.gdt, valid_masks)
                 if self.lambda_aux
                 else zero
             )
-            con_loss = self.lambda_kl * con_raw
-            area_loss = self.lambda_area * area_raw
+            teacher_loss = self.lambda_teacher * teacher_scale * teacher_raw
             aux_loss = self.lambda_aux * aux_raw
 
-            loss = loss_dict["seg"] + con_loss + area_loss + aux_loss
+            loss = loss_dict["seg"] + teacher_loss + aux_loss
             loss_dict.update(
                 {
                     "loss": loss,
-                    "con_raw": con_raw,
-                    "con": con_loss,
-                    "area_raw": area_raw,
-                    "area": area_loss,
+                    "gt_weight": _average_masked(gt_weight, valid_mask),
+                    "teacher_raw": teacher_raw,
+                    "teacher": teacher_loss,
                     "aux_raw": aux_raw,
                     "aux": aux_loss,
                 }
