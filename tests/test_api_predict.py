@@ -74,6 +74,25 @@ def test_request_threshold_overrides_saved_value(monkeypatch, api_client):
     assert response.json()["threshold_applied"] == 0.4
 
 
+def test_tiled_binary_requires_explicit_threshold(monkeypatch, api_client):
+    monkeypatch.setattr(
+        PREDICT_TARGET,
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+    )
+    client = api_client(object(), torch.device("cpu"), threshold=0.62)
+    response = client.post(
+        "/predict",
+        json={
+            "base64_str": _encode(np.zeros((4, 4, 3), np.uint8)),
+            "tiles": [1, 3],
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "threshold is required for tiled binary output"
+    )
+
+
 def test_probability_mode_is_explicit(monkeypatch, api_client):
     def fake_predict(model, image, **kwargs):
         assert kwargs["output_mode"] == "probability"
@@ -86,6 +105,7 @@ def test_probability_mode_is_explicit(monkeypatch, api_client):
         json={
             "base64_str": _encode(np.zeros((8, 8, 3), np.uint8)),
             "output_mode": "probability",
+            "tiles": [1, 3],
         },
     )
     assert response.status_code == 200

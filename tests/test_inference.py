@@ -155,6 +155,22 @@ def test_tiles_accept_any_positive_grid():
         predict_logits(model, image, size=32, tiles=[0])
 
 
+def test_tiled_binary_requires_threshold_but_probability_does_not():
+    model = _ConstantModel(logit=0.0).eval()
+    image = np.zeros((17, 23, 3), dtype=np.uint8)
+    with pytest.raises(ValueError, match="threshold is required"):
+        predict(model, image, size=32, tiles=[2])
+
+    probability = predict(
+        model,
+        image,
+        output_mode="probability",
+        size=32,
+        tiles=[2],
+    )
+    assert np.all(probability == 128)
+
+
 def test_output_modes_are_explicit_and_restore_original_shape():
     model = _ConstantModel(logit=0.0).eval()
     image = np.zeros((17, 43, 3), dtype=np.uint8)

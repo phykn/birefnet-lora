@@ -86,6 +86,24 @@ def test_boundary_bce_ignores_padding():
     assert torch.allclose(BoundaryBCELoss(radius=1)(logits, target, valid), reference)
 
 
+def test_boundary_bce_ignores_only_marked_crop_edges():
+    target = torch.ones(1, 1, 8, 8)
+    valid = torch.ones_like(target)
+    cut = torch.zeros_like(target)
+    cut[:, :, 0] = 1
+    loss_fn = BoundaryBCELoss(radius=1)
+
+    logits = torch.full_like(target, 20.0)
+    reference = loss_fn(logits, target, valid, cut=cut)
+    changed = logits.clone()
+    changed[:, :, :2] = -20.0
+    assert torch.allclose(loss_fn(changed, target, valid, cut=cut), reference)
+
+    changed = logits.clone()
+    changed[:, :, -1] = -20.0
+    assert loss_fn(changed, target, valid, cut=cut) > reference
+
+
 class _TrainModel(nn.Module):
     def __init__(self):
         super().__init__()

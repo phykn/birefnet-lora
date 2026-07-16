@@ -39,16 +39,17 @@ class MaskDataset:
     def __getitem__(self, index: int) -> dict[str, np.ndarray]:
         image, mask = self._load(index)
         image = convert(image, mode=self.mode)
+        cut = np.zeros(mask.shape[:2], dtype=np.uint8)
 
         if self.train:
-            image, mask = crop(
+            image, mask, cut = crop(
                 image,
                 mask,
                 self.size,
                 self.global_prob,
                 self.boundary_prob,
             )
-            image, mask = flip(image, mask)
+            image, mask, cut = flip(image, mask, cut)
             weak = jitter(image, self.weak)
             strong = jitter(image, self.strong)
         else:
@@ -64,6 +65,7 @@ class MaskDataset:
             "weak": weak,
             "mask": fit_mask(binary_mask, fit),
             "valid": valid,
+            "cut": fit_mask(cut, fit),
         }
         if self.train:
             strong, strong_valid, strong_fit = fit_image(
@@ -72,7 +74,9 @@ class MaskDataset:
                 mode="rgb",
             )
             if strong_fit != fit or not np.array_equal(strong_valid, valid):
-                raise RuntimeError("Two-view augmentation produced mismatched geometry.")
+                raise RuntimeError(
+                    "Two-view augmentation produced mismatched geometry."
+                )
             sample["strong"] = strong
         return sample
 

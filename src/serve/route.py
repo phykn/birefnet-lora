@@ -17,10 +17,16 @@ async def check_health(request: Request) -> HealthResponse:
 @router.post("/predict", response_model=PredictResponse)
 async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     threshold = body.threshold
-    if threshold is None:
-        threshold = request.app.state.threshold
-    if threshold is None:
-        threshold = 0.5
+    if body.output_mode == "binary":
+        if threshold is None and any(grid != 1 for grid in body.tiles):
+            raise HTTPException(
+                status_code=422,
+                detail="threshold is required for tiled binary output",
+            )
+        if threshold is None:
+            threshold = request.app.state.threshold
+        if threshold is None:
+            threshold = 0.5
 
     async with request.app.state.predict_sem:
         try:

@@ -133,8 +133,20 @@ class BoundaryBCELoss(nn.Module):
         target: torch.Tensor,
         valid: torch.Tensor,
         weight: torch.Tensor | None = None,
+        cut: torch.Tensor | None = None,
     ) -> torch.Tensor:
         active = make_band(target, self.radius) * valid
+        if cut is not None:
+            if cut.shape[2:] != target.shape[2:]:
+                cut = F.interpolate(cut, size=target.shape[2:], mode="nearest")
+            # Only augmentation cuts are excluded; original image edges stay valid.
+            blocked = F.max_pool2d(
+                cut.clamp(0, 1),
+                kernel_size=self.radius * 2 + 1,
+                stride=1,
+                padding=self.radius,
+            )
+            active = active * (1.0 - blocked)
         if active.sum() <= 0:
             return pred.sum() * 0.0
         if weight is None:
@@ -169,6 +181,7 @@ class SegmentationLoss(nn.Module):
         target: torch.Tensor,
         valid: torch.Tensor | None = None,
         weight: torch.Tensor | None = None,
+        cut: torch.Tensor | None = None,
         include_boundary: bool = True,
     ) -> dict[str, torch.Tensor]:
         target, valid = _resize(pred, target, valid)
@@ -180,7 +193,7 @@ class SegmentationLoss(nn.Module):
         raw_cls = self.cls(pred, target, valid, weight)
         raw_region = self.region(pred.sigmoid(), target, valid * weight)
         raw_boundary = (
-            self.boundary(pred, target, valid, weight)
+            self.boundary(pred, target, valid, weight, cut)
             if include_boundary
             else pred.sum() * 0.0
         )
@@ -199,9 +212,10 @@ class SegmentationLoss(nn.Module):
         target: torch.Tensor,
         valid: torch.Tensor | None = None,
         weight: torch.Tensor | None = None,
+        cut: torch.Tensor | None = None,
         include_boundary: bool = True,
     ) -> torch.Tensor:
-        parts = self.compute(pred, target, valid, weight, include_boundary)
+        parts = self.compute(pred, target, valid, weight, cut, include_boundary)
         return parts["cls"] + parts["region"] + parts["boundary"]
 
 
@@ -243,6 +257,7 @@ class TrainLoss(nn.Module):
         target: torch.Tensor,
         valid: torch.Tensor,
         weight: torch.Tensor | None = None,
+        cut: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         totals: dict[str, torch.Tensor] = {}
         for index, pred in enumerate(logits):
@@ -251,6 +266,7 @@ class TrainLoss(nn.Module):
                 target,
                 valid,
                 weight,
+                cut,
                 include_boundary=index == len(logits) - 1,
             )
             for key, value in parts.items():
@@ -363,6 +379,11 @@ class TrainLoss(nn.Module):
             valid = torch.ones_like(mask)
         else:
             valid = valid.to(device)
+        cut = batch.get("cut")
+        if cut is None:
+            cut = torch.zeros_like(mask)
+        else:
+            cut = cut.to(device)
 
         if model.training:
             strong = batch["strong"].to(device)
@@ -370,6 +391,7 @@ class TrainLoss(nn.Module):
             inputs = torch.cat([weak, strong], dim=0)
             targets = torch.cat([mask, mask], dim=0)
             valids = torch.cat([valid, valid], dim=0)
+            cuts = torch.cat([cut, cut], dim=0)
             out: Output = model(inputs)
             logits = out.logits
 
@@ -398,6 +420,7 @@ class TrainLoss(nn.Module):
                 targets,
                 valids,
                 weight,
+                cuts,
             )
             aux_raw = (
                 self._guide(out.gdt, valids)
@@ -421,5 +444,5 @@ class TrainLoss(nn.Module):
             return parts, loss
 
         out = model(weak)
-        parts = self._segment(out.logits[-1:], mask, valid)
+        parts = self._segment(out.logits[-1:], mask, valid, cut=cut)
         return parts, parts["seg"]

@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 
+from src.prepare.augment import crop
 from src.prepare.load import MaskDataset
 from src.prepare.read import read_image
 
@@ -29,6 +30,8 @@ def test_validation_sample_has_fixed_canvas_binary_mask_and_valid_mask(tmp_path)
     assert sample["weak"].shape == (3, 32, 32)
     assert sample["mask"].shape == (1, 32, 32)
     assert sample["valid"].shape == (1, 32, 32)
+    assert sample["cut"].shape == (1, 32, 32)
+    assert not sample["cut"].any()
     assert set(np.unique(sample["mask"])) <= {0.0, 1.0}
     assert np.all(sample["mask"] <= sample["valid"])
 
@@ -44,3 +47,24 @@ def test_training_views_share_geometry(tmp_path):
     sample = dataset[0]
     assert sample["weak"].shape == sample["strong"].shape
     assert sample["mask"].shape == sample["valid"].shape
+    assert sample["cut"].shape == sample["valid"].shape
+
+
+def test_crop_marks_only_edges_cut_from_source(monkeypatch):
+    image = np.zeros((20, 30, 3), dtype=np.uint8)
+    mask = np.zeros((20, 30), dtype=np.uint8)
+    picks = iter((0, 15))
+    monkeypatch.setattr("random.randrange", lambda *_: next(picks))
+
+    _, _, cut = crop(
+        image,
+        mask,
+        size=10,
+        global_prob=0.0,
+        boundary_prob=0.0,
+    )
+
+    assert not cut[0, 1:-1].any()
+    assert cut[-1].all()
+    assert cut[:, 0].all()
+    assert cut[:, -1].all()

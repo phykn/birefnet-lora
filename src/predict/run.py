@@ -122,7 +122,7 @@ def predict(
     image: np.ndarray,
     *,
     output_mode: OutputMode = "binary",
-    threshold: float = 0.5,
+    threshold: float | None = None,
     size: int = 1024,
     mode: InputMode = "rgb",
     tiles: Sequence[int] = (1,),
@@ -131,19 +131,25 @@ def predict(
 ) -> np.ndarray:
     if output_mode not in {"binary", "probability"}:
         raise ValueError(f"Unsupported output_mode: {output_mode!r}")
-    if not 0.0 <= threshold <= 1.0:
+    if threshold is not None and not 0.0 <= threshold <= 1.0:
         raise ValueError("threshold must be in [0, 1]")
+    grids = tuple(tiles)
+    if output_mode == "binary" and threshold is None:
+        if any(grid != 1 for grid in grids):
+            raise ValueError("threshold is required for tiled binary output")
+        threshold = 0.5
 
     logits = predict_logits(
         model,
         image,
         size=size,
         mode=mode,
-        tiles=tiles,
+        tiles=grids,
         overlap=overlap,
         tile_batch=tile_batch,
     )
     probability = 1.0 / (1.0 + np.exp(-np.clip(logits, -80.0, 80.0)))
     if output_mode == "probability":
         return np.rint(probability * 255.0).astype(np.uint8)
+    assert threshold is not None
     return (probability >= threshold).astype(np.uint8) * 255

@@ -32,7 +32,7 @@ Runs are saved under `run/<run-id>`. Use `notebooks/01_predict.ipynb` to compare
 python run_api.py --host 0.0.0.0 --port 8000 --weight run/<run-id>/weights/best_boundary.overlay.pth
 ```
 
-`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`; positive integers in `tiles` select N×N grids, and `overlap` sets their overlap ratio. Requests are processed one at a time.
+`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`; positive integers in `tiles` select N×N grids, and `overlap` sets their overlap ratio. Binary output with any grid other than 1 requires an explicit `threshold`. Requests are processed one at a time.
 
 ## Test
 

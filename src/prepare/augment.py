@@ -4,10 +4,10 @@ import cv2
 import numpy as np
 
 
-def flip(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def flip(*items: np.ndarray) -> tuple[np.ndarray, ...]:
     turns = int(np.random.randint(4))
     mirror = bool(np.random.randint(2))
-    return _flip(image, turns, mirror), _flip(mask, turns, mirror)
+    return tuple(_flip(item, turns, mirror) for item in items)
 
 
 def _flip(x: np.ndarray, turns: int, mirror: bool) -> np.ndarray:
@@ -23,10 +23,10 @@ def crop(
     size: int,
     global_prob: float,
     boundary_prob: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     height, width = image.shape[:2]
     if random.random() < global_prob or (height <= size and width <= size):
-        return image, mask
+        return image, mask, np.zeros(mask.shape[:2], dtype=np.uint8)
 
     crop_h = min(size, height)
     crop_w = min(size, width)
@@ -51,9 +51,19 @@ def crop(
     top = min(max(center_y - crop_h // 2, 0), height - crop_h)
     left = min(max(center_x - crop_w // 2, 0), width - crop_w)
     bottom, right = top + crop_h, left + crop_w
+    cut = np.zeros((crop_h, crop_w), dtype=np.uint8)
+    if top > 0:
+        cut[0] = 1
+    if bottom < height:
+        cut[-1] = 1
+    if left > 0:
+        cut[:, 0] = 1
+    if right < width:
+        cut[:, -1] = 1
     return (
         image[top:bottom, left:right].copy(),
         mask[top:bottom, left:right].copy(),
+        cut,
     )
 
 
