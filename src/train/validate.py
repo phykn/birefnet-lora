@@ -34,15 +34,17 @@ class ValidationMixin:
         totals: dict[str, float] = {}
         sample_count = 0
 
-        for batch in self.valid_loader:
-            image = batch["weak"].to(self.device)
-            target = batch["mask"].to(self.device)
-            valid = batch["valid"].to(self.device)
+        for cpu_batch in self.valid_loader:
+            batch = self.move(cpu_batch)
+            image = batch["weak"]
+            target = batch["mask"]
+            valid = batch["valid"]
             with torch.amp.autocast(
                 self.device.type, dtype=self.amp_dtype, enabled=self.use_amp
             ):
-                loss_dict, _ = self.criterion(self.model, batch)
-                logits = self.model(image).logits[-1]
+                out = self.model(image)
+                loss_dict, _ = self.criterion(out, batch)
+                logits = out.logits[-1]
 
             if logits.shape[2:] != target.shape[2:]:
                 target = F.interpolate(target, size=logits.shape[2:], mode="nearest")

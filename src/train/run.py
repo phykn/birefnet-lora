@@ -55,6 +55,13 @@ class Trainer(ValidationMixin, CheckpointMixin):
         self._writer: SummaryWriter | None = None
         self._train_iter = None
 
+    def move(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        non_blocking = self.device.type == "cuda"
+        return {
+            key: value.to(self.device, non_blocking=non_blocking)
+            for key, value in batch.items()
+        }
+
     def next_batch(self) -> dict[str, torch.Tensor]:
         if self._train_iter is None:
             self._train_iter = iter(self.train_loader)
@@ -70,19 +77,27 @@ class Trainer(ValidationMixin, CheckpointMixin):
         accum: dict[str, float] = {}
         teacher_scale = self.teacher.scale(self.global_step + 1)
         for _ in range(self.accum_steps):
-            batch = self.next_batch()
+            batch = self.move(self.next_batch())
             with torch.amp.autocast(
                 self.device.type, dtype=self.amp_dtype, enabled=self.use_amp
             ):
                 teacher_logit = None
                 if teacher_scale > 0.0:
-                    image = batch["weak"].to(self.device)
-                    teacher_logit = self.teacher.predict(self.model, image)
+                    teacher_logit = self.teacher.predict(
+                        self.model,
+                        batch["weak"],
+                    )
+                inputs = torch.cat([batch["weak"], batch["strong"]], dim=0)
+                out = self.model(inputs)
                 loss_dict, loss = self.criterion(
-                    self.model,
+                    out,
                     batch,
                     teacher_logit=teacher_logit,
                     teacher_scale=teacher_scale,
+                )
+            if not torch.isfinite(loss):
+                raise FloatingPointError(
+                    f"Non-finite loss at training step {self.global_step + 1}"
                 )
             self.scaler.scale(loss / self.accum_steps).backward()
             for key, value in loss_dict.items():
@@ -92,6 +107,12 @@ class Trainer(ValidationMixin, CheckpointMixin):
         grad_norm = nn.utils.clip_grad_norm_(
             self.model.list_trainable(), self.max_grad_norm
         )
+        if not torch.isfinite(torch.as_tensor(grad_norm)) and not (
+            self.use_amp and self.amp_dtype == torch.float16
+        ):
+            raise FloatingPointError(
+                f"Non-finite gradient at training step {self.global_step + 1}"
+            )
         old_scale = self.scaler.get_scale()
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -115,6 +136,7 @@ class Trainer(ValidationMixin, CheckpointMixin):
             initial=self.global_step,
             desc="Training",
         )
+        skipped = 0
 
         while self.global_step < steps:
             losses, updated = self.step()
@@ -122,7 +144,13 @@ class Trainer(ValidationMixin, CheckpointMixin):
                 {key: f"{value:.4f}" for key, value in losses.items()}
             )
             if not updated:
+                skipped += 1
+                if skipped >= 16:
+                    raise FloatingPointError(
+                        "Optimizer step was skipped 16 consecutive times"
+                    )
                 continue
+            skipped = 0
             progress.update(1)
             for key, value in losses.items():
                 self._writer.add_scalar(f"train/{key}", value, self.global_step)

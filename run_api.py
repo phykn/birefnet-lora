@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from omegaconf import OmegaConf
 
+from src.adapt.fuse import fuse
 from src.build.model import build as build_model
 from src.build.model import load as load_model_overlay
 from src.serve.route import router
@@ -25,7 +26,7 @@ def load_model(path: str, device: torch.device):
     base = build_model(cfg).to(device)
     model = load_model_overlay(cfg, base, path)
     model.eval()
-    return model
+    return fuse(model)
 
 
 def read_threshold(model: Any) -> float | None:

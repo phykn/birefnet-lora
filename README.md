@@ -6,6 +6,7 @@ Fine-tune BiRefNet with LoRA while keeping the original BiRefNet checkpoint comp
 - Aspect-ratio-preserving input with valid-region masking
 - Caller-selected grids such as `tiles=[1]`, `[2]`, or `[1, 3]`
 - Logit-level cosine blending
+- LoRA fusion at API startup
 
 ## Setup
 

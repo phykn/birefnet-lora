@@ -18,6 +18,7 @@ def build(
     train_loader: DataLoader,
     valid_loader: DataLoader,
     calib_loader: DataLoader,
+    save_dir: str | os.PathLike[str] | None = None,
 ) -> Trainer:
     criterion = TrainLoss(
         gce_q=cfg.loss.gce_q,
@@ -77,8 +78,12 @@ def build(
         min_lr=cfg.train.min_lr,
         warmup_steps=cfg.train.warmup_steps,
     )
-    save_dir = os.path.join("run", datetime.now().strftime("%Y%m%d_%H%M%S"))
-    os.makedirs(save_dir, exist_ok=True)
+    target = (
+        os.fspath(save_dir)
+        if save_dir is not None
+        else os.path.join("run", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    )
+    os.makedirs(target, exist_ok=True)
     teacher = Teacher(
         model,
         decay=cfg.teacher.decay,
@@ -94,7 +99,7 @@ def build(
         optimizer=optimizer,
         scheduler=scheduler,
         teacher=teacher,
-        save_dir=save_dir,
+        save_dir=target,
         max_grad_norm=cfg.train.max_grad_norm,
         accum_steps=cfg.train.accum_steps,
     )

@@ -135,13 +135,20 @@ def test_tile_batch_does_not_change_logits():
     np.testing.assert_allclose(first, second, atol=1e-6)
 
 
-def test_multiple_grids_are_averaged_at_logit_level():
+def test_multiple_grids_are_streamed_and_averaged_at_logit_level(monkeypatch):
     model = _MeanModel().eval()
     image = np.zeros((45, 61, 3), dtype=np.uint8)
     image[:, 31:] = 255
     single = predict_logits(model, image, size=32, tiles=[1])
     tiled = predict_logits(model, image, size=32, tiles=[2])
-    combined = predict_logits(model, image, size=32, tiles=[1, 2])
+
+    def fail(*args, **kwargs):
+        raise AssertionError("grid outputs must not be collected for np.mean")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("src.predict.run.np.mean", fail)
+        combined = predict_logits(model, image, size=32, tiles=[1, 2])
+
     np.testing.assert_allclose(combined, (single + tiled) / 2, atol=1e-6)
 
 

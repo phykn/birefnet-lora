@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 from PIL import Image
@@ -16,8 +17,10 @@ class _DummyModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(3, 1, 1)
+        self.calls = 0
 
     def forward(self, x):
+        self.calls += 1
         pred = self.conv(x)
         if self.training:
             return Output(logits=[pred, pred])
@@ -45,17 +48,14 @@ class _DummyModel(nn.Module):
 
 
 class _DummyCriterion(nn.Module):
-    def forward(self, model, batch, teacher_logit=None, teacher_scale=0.0):
-        device = next(model.parameters()).device
-        if model.training:
-            out = model(batch["weak"].to(device))
+    def forward(self, out, batch, teacher_logit=None, teacher_scale=0.0):
+        if len(out.logits) > 1:
             logits = out.logits
             seg = sum(logit.mean() ** 2 for logit in logits) / len(logits)
             cons = (logits[0] - logits[-1]).pow(2).mean()
-            aux = torch.tensor(0.0, device=device)
+            aux = seg.new_zeros(())
             loss = seg + cons + aux
             return {"loss": loss, "seg": seg, "cons": cons, "aux": aux}, loss
-        out = model(batch["weak"].to(device))
         pred = out.logits[-1]
         seg = pred.mean() ** 2
         return {"loss": seg, "seg": seg}, seg
@@ -128,10 +128,12 @@ def test_trainer_step_with_accum(tmp_path):
 
 def test_trainer_validate_returns_avg_losses(tmp_path):
     trainer = _make_trainer(tmp_path)
+    trainer.model.calls = 0
     metrics = trainer.validate()
     assert "loss" in metrics
     assert "seg" in metrics
     assert all(isinstance(v, float) for v in metrics.values())
+    assert trainer.model.calls == len(trainer.valid_loader)
 
 
 def test_trainer_get_batch_wraps_around(tmp_path):
@@ -195,6 +197,14 @@ class _SkipScaler:
         return self.value
 
 
+class _AlwaysSkipScaler(_SkipScaler):
+    def step(self, optimizer):
+        self.attempts += 1
+
+    def update(self):
+        self.value /= 2
+
+
 def test_overflow_skip_keeps_optimizer_dependent_state(tmp_path):
     trainer = _make_trainer(tmp_path)
     trainer.scaler = _SkipScaler()
@@ -222,6 +232,29 @@ def test_training_retries_skipped_update(tmp_path):
 
     assert scaler.attempts == 2
     assert trainer.global_step == 1
+
+
+def test_training_stops_after_repeated_skipped_updates(tmp_path):
+    trainer = _make_trainer(tmp_path)
+    trainer.scaler = _AlwaysSkipScaler()
+    trainer.save = lambda: None
+
+    with pytest.raises(FloatingPointError, match="16 consecutive"):
+        trainer.train(steps=1, val_freq=2, save_freq=10)
+    assert trainer.global_step == 0
+
+
+def test_training_rejects_non_finite_loss(tmp_path):
+    trainer = _make_trainer(tmp_path)
+
+    class _BadLoss(nn.Module):
+        def forward(self, out, batch, **kwargs):
+            loss = out.logits[-1].sum() * float("nan")
+            return {"loss": loss}, loss
+
+    trainer.criterion = _BadLoss()
+    with pytest.raises(FloatingPointError, match="Non-finite loss"):
+        trainer.step()
 
 
 def test_best_selection_uses_calibrated_deployment_threshold(tmp_path):

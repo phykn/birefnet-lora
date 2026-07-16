@@ -97,7 +97,7 @@ def predict_logits(
     model.eval()
     device = next(model.parameters()).device
     processed = convert(image, mode=mode)
-    outputs = []
+    total = None
     for grid in grids:
         if grid == 1:
             tensor, _, fit = fit_image(processed, size=size, mode="rgb")
@@ -112,9 +112,14 @@ def predict_logits(
                 tile_batch,
                 device,
             )
-        outputs.append(output)
+        if total is None:
+            total = output.astype(np.float32, copy=True)
+        else:
+            np.add(total, output, out=total)
 
-    return np.mean(outputs, axis=0, dtype=np.float32)
+    assert total is not None
+    total /= np.float32(len(grids))
+    return total
 
 
 def predict(

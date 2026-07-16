@@ -366,33 +366,24 @@ class TrainLoss(nn.Module):
 
     def forward(
         self,
-        model: nn.Module,
+        out: Output,
         batch: dict[str, torch.Tensor],
         teacher_logit: torch.Tensor | None = None,
         teacher_scale: float = 0.0,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-        device = next(model.parameters()).device
-        weak = batch["weak"].to(device)
-        mask = batch["mask"].to(device)
+        mask = batch["mask"]
         valid = batch.get("valid")
         if valid is None:
             valid = torch.ones_like(mask)
-        else:
-            valid = valid.to(device)
         cut = batch.get("cut")
         if cut is None:
             cut = torch.zeros_like(mask)
-        else:
-            cut = cut.to(device)
 
-        if model.training:
-            strong = batch["strong"].to(device)
-            size = weak.shape[0]
-            inputs = torch.cat([weak, strong], dim=0)
+        if out.gdt is not None:
+            size = mask.shape[0]
             targets = torch.cat([mask, mask], dim=0)
             valids = torch.cat([valid, valid], dim=0)
             cuts = torch.cat([cut, cut], dim=0)
-            out: Output = model(inputs)
             logits = out.logits
 
             weak_logit = logits[-1][:size]
@@ -443,6 +434,5 @@ class TrainLoss(nn.Module):
             )
             return parts, loss
 
-        out = model(weak)
         parts = self._segment(out.logits[-1:], mask, valid, cut=cut)
         return parts, parts["seg"]

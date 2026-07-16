@@ -176,7 +176,8 @@ def test_custom_loss_train_mode_returns_all_terms():
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
         "valid": torch.ones(2, 1, 8, 8),
     }
-    loss_dict, loss = TrainLoss()(model, batch)
+    inputs = torch.cat([batch["weak"], batch["strong"]], dim=0)
+    loss_dict, loss = TrainLoss()(model(inputs), batch)
     assert {
         "loss",
         "seg",
@@ -202,7 +203,7 @@ def test_custom_loss_eval_mode_returns_seg_only():
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
         "valid": torch.ones(2, 1, 8, 8),
     }
-    loss_dict, loss = TrainLoss()(model, batch)
+    loss_dict, loss = TrainLoss()(model(batch["weak"]), batch)
     assert {
         "seg",
         "cls_raw",
