@@ -115,17 +115,30 @@ def test_multiscale_boundary_loss_is_not_diluted():
     assert torch.allclose(parts["boundary"], expected)
 
 
-def test_gdt_loss_ignores_letterbox_padding():
+def test_gdt_loss_ignores_laplacian_border_around_letterbox():
     loss_fn = TrainLoss()
     valid = torch.ones(1, 1, 8, 8)
     valid[:, :, :, 4:] = 0
     label = torch.zeros(1, 1, 8, 8)
     reference_pred = torch.zeros_like(label)
     changed_pred = reference_pred.clone()
-    changed_pred[:, :, :, 4:] = 100
+    changed_pred[:, :, :, 2:] = 100
     reference = loss_fn._guide(([reference_pred], [label]), valid)
     changed = loss_fn._guide(([changed_pred], [label]), valid)
     assert torch.allclose(changed, reference)
+
+    changed_pred[:, :, :, 1] = 100
+    changed = loss_fn._guide(([changed_pred], [label]), valid)
+    assert changed > reference
+
+
+def test_gdt_target_does_not_receive_gradient():
+    loss_fn = TrainLoss()
+    pred = torch.zeros(1, 1, 8, 8, requires_grad=True)
+    label = torch.zeros(1, 1, 8, 8, requires_grad=True)
+    loss_fn._guide(([pred], [label]), torch.ones_like(pred)).backward()
+    assert pred.grad is not None
+    assert label.grad is None
 
 
 def test_teacher_only_reduces_conflicting_confident_gt():

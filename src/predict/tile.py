@@ -25,19 +25,19 @@ class Tile:
 
 
 def _plan_axis(
-    length: int, count: int, overlap_ratio: float
+    length: int, count: int, overlap: float
 ) -> list[tuple[int, int, int, int]]:
     if length <= 0 or count <= 0:
         raise ValueError("length and count must be positive")
-    if not 0.0 <= overlap_ratio < 1.0:
-        raise ValueError("overlap_ratio must be in [0, 1)")
+    if not 1 / 3 <= overlap < 1.0:
+        raise ValueError("overlap must be in [1/3, 1)")
     if count == 1:
         return [(0, length, 0, 0)]
 
-    extent = math.ceil(length / (count - (count - 1) * overlap_ratio))
+    extent = math.ceil(length / (count - (count - 1) * overlap))
     while True:
         starts = np.rint(np.linspace(0, length - extent, count)).astype(int)
-        min_overlap = math.ceil(extent * overlap_ratio)
+        min_overlap = math.ceil(extent * overlap)
         actual = extent - int(np.diff(starts).max())
         if actual >= min_overlap:
             break
@@ -56,24 +56,16 @@ def _plan_axis(
 def plan(
     height: int,
     width: int,
-    size: int = 1024,
-    overlap_ratio: float = 1 / 3,
+    grid: int,
+    overlap: float = 1 / 3,
 ) -> list[Tile]:
-    if size <= 0:
-        raise ValueError("size must be positive")
-    if not 0.0 <= overlap_ratio < 1.0:
-        raise ValueError("overlap_ratio must be in [0, 1)")
+    if grid <= 0:
+        raise ValueError("grid must be positive")
+    if not 1 / 3 <= overlap < 1.0:
+        raise ValueError("overlap must be in [1/3, 1)")
 
-    longest = max(height, width)
-    if longest <= size:
-        grid = 1
-    elif longest <= size * (2 - overlap_ratio):
-        grid = 2
-    else:
-        grid = 3
-
-    ys = _plan_axis(height, grid, overlap_ratio)
-    xs = _plan_axis(width, grid, overlap_ratio)
+    ys = _plan_axis(height, grid, overlap)
+    xs = _plan_axis(width, grid, overlap)
     return [
         Tile(
             top=top,

@@ -36,6 +36,8 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
             image,
             output_mode=body.output_mode,
             threshold=threshold,
+            tiles=body.tiles,
+            overlap=body.overlap,
         )
         data = await run_in_threadpool(encode, mask)
 

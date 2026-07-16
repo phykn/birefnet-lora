@@ -26,6 +26,17 @@ def _mean(value: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
     return (value * valid).sum() / denom
 
 
+def _erode(valid: torch.Tensor, radius: int) -> torch.Tensor:
+    invalid = 1.0 - valid
+    kernel = radius * 2 + 1
+    return 1.0 - F.max_pool2d(
+        invalid,
+        kernel_size=kernel,
+        stride=1,
+        padding=radius,
+    )
+
+
 class GCELoss(nn.Module):
     def __init__(self, q: float = 0.7) -> None:
         super().__init__()
@@ -327,9 +338,11 @@ class TrainLoss(nn.Module):
             mask = valid
             if mask.shape[2:] != label.shape[2:]:
                 mask = F.interpolate(mask, size=label.shape[2:], mode="nearest")
+            # The GDT target uses a 5x5 Laplacian, so its padding border is artificial.
+            mask = _erode(mask, radius=2)
             pixel_bce = F.binary_cross_entropy_with_logits(
                 pred,
-                label.sigmoid(),
+                label.detach().sigmoid(),
                 reduction="none",
             )
             loss = loss + _mean(pixel_bce, mask)

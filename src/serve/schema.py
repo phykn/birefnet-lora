@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 from .codec import MAX_BASE64_LENGTH
 
@@ -15,6 +15,8 @@ class PredictRequest(BaseModel):
     base64_str: str = Field(min_length=4, max_length=MAX_BASE64_LENGTH)
     output_mode: Literal["binary", "probability"] = "binary"
     threshold: float | None = Field(None, ge=0.0, le=1.0)
+    tiles: tuple[PositiveInt, ...] = Field((1,), min_length=1)
+    overlap: float = Field(1 / 3, ge=1 / 3, lt=1.0)
 
 
 class PredictResponse(BaseModel):

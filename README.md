@@ -4,7 +4,7 @@ Fine-tune BiRefNet with LoRA while keeping the original BiRefNet checkpoint comp
 
 - Noise-robust GCE, Dice, boundary, and EMA-teacher losses
 - Aspect-ratio-preserving input with valid-region masking
-- Optional 2×2 or 3×3 tiling through `predict(..., tile=True)`
+- Caller-selected grids such as `tiles=[1]`, `[2]`, or `[1, 3]`
 - Logit-level cosine blending
 
 ## Setup
@@ -32,7 +32,7 @@ Runs are saved under `run/<run-id>`. Use `notebooks/01_predict.ipynb` to compare
 python run_api.py --host 0.0.0.0 --port 8000 --weight run/<run-id>/weights/best_boundary.overlay.pth
 ```
 
-`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`. Requests are processed one at a time.
+`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`; positive integers in `tiles` select N×N grids, and `overlap` sets their overlap ratio. Requests are processed one at a time.
 
 ## Test
 

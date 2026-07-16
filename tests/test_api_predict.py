@@ -45,7 +45,8 @@ def test_defaults_to_binary_and_uses_saved_threshold(monkeypatch, api_client):
     assert _decode(payload["base64_str"]).shape == (16, 24)
     assert captured["output_mode"] == "binary"
     assert captured["threshold"] == 0.62
-    assert "tile" not in captured
+    assert captured["tiles"] == (1,)
+    assert captured["overlap"] == pytest.approx(1 / 3)
 
 
 def test_request_threshold_overrides_saved_value(monkeypatch, api_client):
@@ -59,10 +60,17 @@ def test_request_threshold_overrides_saved_value(monkeypatch, api_client):
     client = api_client(object(), torch.device("cpu"), threshold=0.62)
     response = client.post(
         "/predict",
-        json={"base64_str": _encode(np.zeros((4, 4, 3), np.uint8)), "threshold": 0.4},
+        json={
+            "base64_str": _encode(np.zeros((4, 4, 3), np.uint8)),
+            "threshold": 0.4,
+            "tiles": [1, 4],
+            "overlap": 0.4,
+        },
     )
     assert response.status_code == 200
     assert captured["threshold"] == 0.4
+    assert captured["tiles"] == (1, 4)
+    assert captured["overlap"] == 0.4
     assert response.json()["threshold_applied"] == 0.4
 
 
@@ -108,6 +116,18 @@ def test_rejects_invalid_output_contract(api_client):
     assert (
         client.post(
             "/predict", json={"base64_str": encoded, "output_mode": "soft"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/predict", json={"base64_str": encoded, "tiles": [0]}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/predict", json={"base64_str": encoded, "overlap": 0.2}
         ).status_code
         == 422
     )
