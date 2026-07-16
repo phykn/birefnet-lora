@@ -45,6 +45,7 @@ def test_defaults_to_binary_and_uses_saved_threshold(monkeypatch, api_client):
     assert _decode(payload["base64_str"]).shape == (16, 24)
     assert captured["output_mode"] == "binary"
     assert captured["threshold"] == 0.62
+    assert "tile" not in captured
 
 
 def test_request_threshold_overrides_saved_value(monkeypatch, api_client):

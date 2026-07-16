@@ -22,7 +22,7 @@ class CheckpointMixin:
     def save(self) -> None:
         weights_dir = Path(self.save_dir) / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
-        overlay = self.model.make_overlay({"inference": self.inference})
+        overlay = self.model.make_overlay()
         _save(overlay, str(weights_dir / "last.overlay.pth"))
         training_state = {
             "overlay": overlay,
@@ -40,7 +40,6 @@ class CheckpointMixin:
     def save_best(self, name: str, metrics: dict[str, float]) -> None:
         weights_dir = Path(self.save_dir) / "weights"
         extra = {
-            "inference": self.inference,
             "selection": {
                 "name": name,
                 "global_step": self.global_step,
@@ -57,9 +56,7 @@ class CheckpointMixin:
         state = torch.load(path, map_location="cpu", weights_only=True)
         if not isinstance(state, dict) or "overlay" not in state:
             raise RuntimeError("Unsupported training checkpoint format")
-        meta = self.model.load_payload(state["overlay"])
-        if meta.get("inference") != self.inference:
-            raise RuntimeError("Resume checkpoint inference config does not match")
+        self.model.load_payload(state["overlay"])
         self.optimizer.load_state_dict(state["optimizer"])
         self.scheduler.load_state_dict(state["scheduler"])
         self.scaler.load_state_dict(state["scaler"])

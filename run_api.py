@@ -21,14 +21,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_model(path: str, device: torch.device):
-    cfg = OmegaConf.merge(
-        OmegaConf.load("config/tune.yaml"),
-        OmegaConf.load("config/model.yaml"),
-    )
+    cfg = OmegaConf.load("config/model.yaml")
     base = build_model(cfg).to(device)
     model = load_model_overlay(cfg, base, path)
     model.eval()
-    return model, cfg
+    return model
 
 
 def read_threshold(model: Any) -> float | None:
@@ -40,13 +37,11 @@ def read_threshold(model: Any) -> float | None:
 def build_app(
     model: Any,
     device: torch.device,
-    settings: dict[str, Any],
     threshold: float | None,
 ) -> FastAPI:
     app = FastAPI(title="BiRefNet-LoRA API")
     app.state.model = model
     app.state.device = device
-    app.state.settings = settings
     app.state.threshold = threshold
     app.state.predict_sem = asyncio.Semaphore(1)
     app.include_router(router)
@@ -56,22 +51,10 @@ def build_app(
 def main() -> None:
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, cfg = load_model(args.weight, device)
-    settings = dict((model.loaded_meta or {}).get("inference", {}))
-    required = {
-        "size",
-        "mode",
-        "overlap_ratio",
-        "tile_batch",
-        "context_weight",
-    }
-    if set(settings) != required:
-        raise RuntimeError("Overlay inference settings are incomplete")
-    settings["default_threshold"] = float(cfg.inference.default_threshold)
+    model = load_model(args.weight, device)
     app = build_app(
         model=model,
         device=device,
-        settings=settings,
         threshold=read_threshold(model),
     )
     uvicorn.run(app, host=args.host, port=args.port)

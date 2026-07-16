@@ -3,7 +3,7 @@ from typing import Any
 import torch
 
 from ..adapt.wrap import LoRABiRefNet
-from ..model.birefnet import BiRefNet
+from ..model import BiRefNet
 
 
 def build(cfg: Any) -> BiRefNet:

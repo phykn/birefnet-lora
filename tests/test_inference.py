@@ -79,6 +79,19 @@ def test_neighboring_cosine_windows_are_complementary():
     )
 
 
+def test_tiling_is_opt_in(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("tile planner should not run")
+
+    monkeypatch.setattr("src.predict.run.plan", fail)
+    model = _ConstantModel(logit=1.25).eval()
+    image = np.zeros((45, 61, 3), dtype=np.uint8)
+    logits = predict_logits(model, image, size=32)
+
+    assert logits.shape == image.shape[:2]
+    np.testing.assert_allclose(logits, 1.25, atol=1e-6)
+
+
 def test_tile_batch_does_not_change_logits():
     model = _ConstantModel(logit=1.25).eval()
     image = np.zeros((45, 61, 3), dtype=np.uint8)
@@ -86,6 +99,7 @@ def test_tile_batch_does_not_change_logits():
         model,
         image,
         size=32,
+        tile=True,
         overlap_ratio=1 / 3,
         tile_batch=1,
     )
@@ -93,6 +107,7 @@ def test_tile_batch_does_not_change_logits():
         model,
         image,
         size=32,
+        tile=True,
         overlap_ratio=1 / 3,
         tile_batch=3,
     )

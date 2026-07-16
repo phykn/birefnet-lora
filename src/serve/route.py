@@ -20,9 +20,8 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
     if threshold is None:
         threshold = request.app.state.threshold
     if threshold is None:
-        threshold = request.app.state.settings["default_threshold"]
+        threshold = 0.5
 
-    settings = request.app.state.settings
     async with request.app.state.predict_sem:
         try:
             image = await run_in_threadpool(decode, body.base64_str)
@@ -37,11 +36,6 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
             image,
             output_mode=body.output_mode,
             threshold=threshold,
-            size=settings["size"],
-            mode=settings["mode"],
-            overlap_ratio=settings["overlap_ratio"],
-            tile_batch=settings["tile_batch"],
-            context_weight=settings["context_weight"],
         )
         data = await run_in_threadpool(encode, mask)
 

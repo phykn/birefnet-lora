@@ -97,11 +97,4 @@ def build(
         save_dir=save_dir,
         max_grad_norm=cfg.train.max_grad_norm,
         accum_steps=cfg.train.accum_steps,
-        inference={
-            "size": int(cfg.data.size),
-            "mode": str(cfg.data.mode),
-            "overlap_ratio": float(cfg.inference.overlap_ratio),
-            "tile_batch": int(cfg.inference.tile_batch),
-            "context_weight": float(cfg.inference.context_weight),
-        },
     )

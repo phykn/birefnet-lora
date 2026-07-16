@@ -4,7 +4,7 @@ import torch.nn as nn
 from src.adapt.inject import inject_linear
 from src.adapt.layer import LoRAConv2d, LoRALinear
 from src.adapt.wrap import LoRABiRefNet
-from src.model.birefnet.swin import BasicLayer
+from src.model.swin import BasicLayer
 
 
 class _Decoder(nn.Module):

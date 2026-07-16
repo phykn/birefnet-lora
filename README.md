@@ -4,7 +4,7 @@ Fine-tune BiRefNet with LoRA while keeping the original BiRefNet checkpoint comp
 
 - Noise-robust GCE, Dice, boundary, and EMA-teacher losses
 - Aspect-ratio-preserving input with valid-region masking
-- 2×2 or 3×3 tiling with at least 33% overlap
+- Optional 2×2 or 3×3 tiling through `predict(..., tile=True)`
 - Logit-level cosine blending
 
 ## Setup

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from src.model.birefnet import BiRefNet
+from src.model import BiRefNet
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CHECKPOINT = ROOT / "weight" / "BiRefNet-general-epoch_244.pth"

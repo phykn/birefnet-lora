@@ -94,11 +94,6 @@ class ValidationMixin:
             logits = predict_logits(
                 self.model,
                 image,
-                size=self.inference["size"],
-                mode=self.inference["mode"],
-                overlap_ratio=self.inference["overlap_ratio"],
-                tile_batch=self.inference["tile_batch"],
-                context_weight=self.inference["context_weight"],
             )
             prob = 1.0 / (1.0 + np.exp(-np.clip(logits, -80.0, 80.0)))
             yield prob, target

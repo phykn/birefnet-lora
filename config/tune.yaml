@@ -50,9 +50,3 @@ teacher:
   confidence: 0.95
   min_gt_weight: 0.25
   loss_weight: 0.1
-
-inference:
-  overlap_ratio: 0.3333333333333333
-  tile_batch: 2
-  context_weight: 0.0
-  default_threshold: 0.5

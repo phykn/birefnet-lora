@@ -96,13 +96,6 @@ def _make_trainer(tmp_path, accum_steps=1):
         train_loader=train_loader,
         valid_loader=valid_loader,
         calib_loader=valid_loader,
-        inference={
-            "size": 8,
-            "mode": "rgb",
-            "overlap_ratio": 1 / 3,
-            "tile_batch": 1,
-            "context_weight": 0.0,
-        },
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
@@ -152,8 +145,11 @@ def test_trainer_save_writes_overlay_and_resume_state(tmp_path):
     trainer = _make_trainer(tmp_path)
     trainer.save()
     weights_dir = os.path.join(trainer.save_dir, "weights")
-    assert os.path.exists(os.path.join(weights_dir, "last.overlay.pth"))
+    overlay_path = os.path.join(weights_dir, "last.overlay.pth")
+    assert os.path.exists(overlay_path)
     assert os.path.exists(os.path.join(weights_dir, "last.train.pth"))
+    overlay = torch.load(overlay_path, map_location="cpu", weights_only=True)
+    assert "inference" not in overlay["meta"]
 
 
 def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):

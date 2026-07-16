@@ -1,5 +1,4 @@
 import os
-from typing import Any
 
 import torch
 import torch.nn as nn
@@ -20,7 +19,6 @@ class Trainer(ValidationMixin, CheckpointMixin):
         train_loader: DataLoader,
         valid_loader: DataLoader,
         calib_loader: DataLoader,
-        inference: dict[str, Any],
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: CosineSchedule,
@@ -40,7 +38,6 @@ class Trainer(ValidationMixin, CheckpointMixin):
         self.save_dir = save_dir
         self.max_grad_norm = max_grad_norm
         self.accum_steps = accum_steps
-        self.inference = inference
         self.device = next(model.parameters()).device
         self.global_step = 0
         self.best_region = float("-inf")
