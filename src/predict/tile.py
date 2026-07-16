@@ -5,7 +5,7 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class TileBox:
+class Tile:
     top: int
     left: int
     bottom: int
@@ -53,12 +53,12 @@ def _plan_axis(
     return planned
 
 
-def plan_tiles(
+def plan(
     height: int,
     width: int,
     size: int = 1024,
     overlap_ratio: float = 1 / 3,
-) -> list[TileBox]:
+) -> list[Tile]:
     if size <= 0:
         raise ValueError("size must be positive")
     if not 0.0 <= overlap_ratio < 1.0:
@@ -75,7 +75,7 @@ def plan_tiles(
     ys = _plan_axis(height, grid, overlap_ratio)
     xs = _plan_axis(width, grid, overlap_ratio)
     return [
-        TileBox(
+        Tile(
             top=top,
             left=left,
             bottom=bottom,
@@ -90,32 +90,32 @@ def plan_tiles(
     ]
 
 
-def _make_ramp(length: int) -> np.ndarray:
+def _ramp(length: int) -> np.ndarray:
     if length <= 0:
         return np.empty(0, dtype=np.float32)
     angles = np.linspace(0.0, np.pi, length + 2, dtype=np.float32)[1:-1]
     return 0.5 - 0.5 * np.cos(angles)
 
 
-def make_window(box: TileBox) -> np.ndarray:
-    wy = np.ones(box.height, dtype=np.float32)
-    wx = np.ones(box.width, dtype=np.float32)
-    if box.overlap_top:
-        wy[: box.overlap_top] = np.minimum(
-            wy[: box.overlap_top], _make_ramp(box.overlap_top)
+def weigh(tile: Tile) -> np.ndarray:
+    wy = np.ones(tile.height, dtype=np.float32)
+    wx = np.ones(tile.width, dtype=np.float32)
+    if tile.overlap_top:
+        wy[: tile.overlap_top] = np.minimum(
+            wy[: tile.overlap_top], _ramp(tile.overlap_top)
         )
-    if box.overlap_bottom:
-        wy[-box.overlap_bottom :] = np.minimum(
-            wy[-box.overlap_bottom :],
-            _make_ramp(box.overlap_bottom)[::-1],
+    if tile.overlap_bottom:
+        wy[-tile.overlap_bottom :] = np.minimum(
+            wy[-tile.overlap_bottom :],
+            _ramp(tile.overlap_bottom)[::-1],
         )
-    if box.overlap_left:
-        wx[: box.overlap_left] = np.minimum(
-            wx[: box.overlap_left], _make_ramp(box.overlap_left)
+    if tile.overlap_left:
+        wx[: tile.overlap_left] = np.minimum(
+            wx[: tile.overlap_left], _ramp(tile.overlap_left)
         )
-    if box.overlap_right:
-        wx[-box.overlap_right :] = np.minimum(
-            wx[-box.overlap_right :],
-            _make_ramp(box.overlap_right)[::-1],
+    if tile.overlap_right:
+        wx[-tile.overlap_right :] = np.minimum(
+            wx[-tile.overlap_right :],
+            _ramp(tile.overlap_right)[::-1],
         )
     return wy[:, None] * wx[None, :]

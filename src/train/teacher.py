@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.func import functional_call
 
-from ..model.lora.model import ModelOutput
+from ..adapt.wrap import Output
 
 
 class Teacher:
@@ -45,13 +45,13 @@ class Teacher:
         training = model.training
         try:
             model.eval()
-            out: ModelOutput = functional_call(
+            out: Output = functional_call(
                 model,
                 self.params,
                 (image,),
                 strict=False,
             )
-            return out.preds[-1].detach()
+            return out.logits[-1].detach()
         finally:
             model.train(training)
 

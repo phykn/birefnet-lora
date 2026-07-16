@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 
+from src.adapt.inject import inject_linear
+from src.adapt.layer import LoRAConv2d, LoRALinear
+from src.adapt.wrap import LoRABiRefNet
 from src.model.birefnet.swin import BasicLayer
-from src.model.lora.inject import inject_linear
-from src.model.lora.layers import LoRAConv2d, LoRALinear
-from src.model.lora.model import LoRABiRefNet
 
 
 class _Decoder(nn.Module):
@@ -82,7 +82,7 @@ def test_zero_initialized_lora_preserves_base_eval_output():
     x = torch.randn(1, 3, 8, 8)
     expected = base(x)[0].detach().clone()
     wrapped = LoRABiRefNet(base, rank=2, alpha=4.0).eval()
-    actual = wrapped(x).preds[0]
+    actual = wrapped(x).logits[0]
     assert torch.allclose(actual, expected)
 
 
@@ -181,8 +181,8 @@ def test_overlay_rejects_invalid_format(tmp_path):
     raise AssertionError("Expected RuntimeError on key mismatch")
 
 
-def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
-    from src.model.lora.model import ModelOutput
+def test_lora_birefnet_forward_returns_output_in_both_modes():
+    from src.adapt.wrap import Output
 
     class _Stub(nn.Module):
         def __init__(self):
@@ -204,11 +204,11 @@ def test_lora_birefnet_forward_returns_modeloutput_in_both_modes():
 
     lora.train()
     out_train = lora(torch.randn(1, 3, 8, 8))
-    assert isinstance(out_train, ModelOutput)
-    assert isinstance(out_train.preds, list)
+    assert isinstance(out_train, Output)
+    assert isinstance(out_train.logits, list)
     assert out_train.gdt is not None
 
     lora.eval()
     out_eval = lora(torch.randn(1, 3, 8, 8))
-    assert isinstance(out_eval, ModelOutput)
+    assert isinstance(out_eval, Output)
     assert out_eval.gdt is None

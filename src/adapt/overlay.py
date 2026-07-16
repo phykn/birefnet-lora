@@ -5,7 +5,8 @@ from typing import Any
 
 import torch
 
-def _atomic_save(payload: dict[str, Any], path: str) -> None:
+
+def _save(payload: dict[str, Any], path: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
@@ -47,7 +48,7 @@ class OverlayMixin:
         }
 
     def save_overlay(self, path: str, extra: dict[str, Any] | None = None) -> None:
-        _atomic_save(self.make_overlay(extra), path)
+        _save(self.make_overlay(extra), path)
 
     def _check_meta(self, meta: dict[str, Any]) -> None:
         lora = meta.get("lora", {})
@@ -63,6 +64,7 @@ class OverlayMixin:
                 "Overlay trainable-head allowlist does not match the model: "
                 f"expected={self.trainable_heads}, loaded={heads}."
             )
+
     def load_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise RuntimeError("Unsupported overlay checkpoint format.")

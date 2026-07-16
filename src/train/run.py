@@ -67,7 +67,7 @@ class Trainer(ValidationMixin, CheckpointMixin):
             self._train_iter = iter(self.train_loader)
             return next(self._train_iter)
 
-    def step(self) -> dict[str, float]:
+    def step(self) -> tuple[dict[str, float], bool]:
         self.model.train()
         self.optimizer.zero_grad(set_to_none=True)
         accum: dict[str, float] = {}
@@ -77,14 +77,14 @@ class Trainer(ValidationMixin, CheckpointMixin):
             with torch.amp.autocast(
                 self.device.type, dtype=self.amp_dtype, enabled=self.use_amp
             ):
-                teacher_logits = None
+                teacher_logit = None
                 if teacher_scale > 0.0:
-                    image = batch["image_1"].to(self.device)
-                    teacher_logits = self.teacher.predict(self.model, image)
+                    image = batch["weak"].to(self.device)
+                    teacher_logit = self.teacher.predict(self.model, image)
                 loss_dict, loss = self.criterion(
                     self.model,
                     batch,
-                    teacher_logits=teacher_logits,
+                    teacher_logit=teacher_logit,
                     teacher_scale=teacher_scale,
                 )
             self.scaler.scale(loss / self.accum_steps).backward()
@@ -95,13 +95,16 @@ class Trainer(ValidationMixin, CheckpointMixin):
         grad_norm = nn.utils.clip_grad_norm_(
             self.model.list_trainable(), self.max_grad_norm
         )
+        old_scale = self.scaler.get_scale()
         self.scaler.step(self.optimizer)
         self.scaler.update()
-        self.teacher.update(self.model)
-        self.scheduler.step()
-        self.global_step += 1
+        updated = self.scaler.get_scale() >= old_scale
+        if updated:
+            self.teacher.update(self.model)
+            self.scheduler.step()
+            self.global_step += 1
         accum["grad_norm"] = float(grad_norm)
-        return accum
+        return accum, updated
 
     def train(
         self,
@@ -110,13 +113,20 @@ class Trainer(ValidationMixin, CheckpointMixin):
         save_freq: int = 1000,
     ) -> None:
         self._writer = SummaryWriter(log_dir=os.path.join(self.save_dir, "logs"))
-        progress_bar = tqdm(range(self.global_step + 1, steps + 1), desc="Training")
+        progress = tqdm(
+            total=steps,
+            initial=self.global_step,
+            desc="Training",
+        )
 
-        for _ in progress_bar:
-            losses = self.step()
-            progress_bar.set_postfix(
+        while self.global_step < steps:
+            losses, updated = self.step()
+            progress.set_postfix(
                 {key: f"{value:.4f}" for key, value in losses.items()}
             )
+            if not updated:
+                continue
+            progress.update(1)
             for key, value in losses.items():
                 self._writer.add_scalar(f"train/{key}", value, self.global_step)
             for index, group in enumerate(self.optimizer.param_groups):
@@ -124,19 +134,18 @@ class Trainer(ValidationMixin, CheckpointMixin):
                 self._writer.add_scalar(f"lr/{name}", group["lr"], self.global_step)
 
             if self.global_step % val_freq == 0:
+                threshold = self.calibrate()
                 valid_metrics = self.validate()
-                valid_metrics.update(self.validate_deploy(0.5))
+                valid_metrics.update(self.validate_deploy(threshold))
                 for key, value in valid_metrics.items():
                     self._writer.add_scalar(f"valid/{key}", value, self.global_step)
+                self._writer.add_scalar(
+                    "valid/threshold", threshold, self.global_step
+                )
                 region_improved = valid_metrics["deploy_region_iou"] > self.best_region
                 boundary_improved = (
                     valid_metrics["deploy_boundary_f1"] > self.best_boundary
                 )
-                if region_improved or boundary_improved:
-                    threshold = self.calibrate()
-                    self._writer.add_scalar(
-                        "valid/threshold", threshold, self.global_step
-                    )
                 if region_improved:
                     self.best_region = valid_metrics["deploy_region_iou"]
                     self.save_best("region", valid_metrics)
@@ -148,5 +157,6 @@ class Trainer(ValidationMixin, CheckpointMixin):
                 self.save()
 
         self.save()
+        progress.close()
         self._writer.flush()
         self._writer.close()

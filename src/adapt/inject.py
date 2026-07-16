@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from .layers import LoRAConv2d, LoRALinear
+from .layer import LoRAConv2d, LoRALinear
 
 
 def inject_linear(model: nn.Module, rank: int = 8, alpha: float = 16.0) -> None:
@@ -20,11 +20,11 @@ def inject_conv(
     model: nn.Module,
     rank: int = 8,
     alpha: float = 16.0,
-    exclude_names: list[str] | None = None,
-    exclude_paths: list[str] | None = None,
+    skip_names: list[str] | None = None,
+    skip_paths: list[str] | None = None,
 ) -> None:
-    excludes = set(exclude_names or [])
-    excluded_paths = set(exclude_paths or [])
+    names = set(skip_names or [])
+    paths = set(skip_paths or [])
     for module_name, module in list(model.named_modules()):
         if isinstance(module, (LoRALinear, LoRAConv2d)):
             continue
@@ -33,7 +33,7 @@ def inject_conv(
                 child_path = (
                     f"{module_name}.{child_name}" if module_name else child_name
                 )
-                if child_name in excludes or child_path in excluded_paths:
+                if child_name in names or child_path in paths:
                     continue
                 setattr(
                     module,

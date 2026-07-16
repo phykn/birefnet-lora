@@ -14,7 +14,7 @@ def normalize(image: np.ndarray) -> np.ndarray:
     return (x - MEAN) / STD
 
 
-def _ensure_rgb(image: np.ndarray) -> np.ndarray:
+def _to_rgb(image: np.ndarray) -> np.ndarray:
     if image.ndim == 2:
         return np.repeat(image[..., None], 3, axis=2)
     if image.ndim != 3:
@@ -26,8 +26,8 @@ def _ensure_rgb(image: np.ndarray) -> np.ndarray:
     raise ValueError(f"Unsupported channel count: {image.shape[2]}")
 
 
-def _convert_gray(image: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(_ensure_rgb(image), cv2.COLOR_RGB2GRAY)
+def _to_gray(image: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(_to_rgb(image), cv2.COLOR_RGB2GRAY)
 
 
 def _zscore(gray: np.ndarray, std_range: float = 3.0) -> np.ndarray:
@@ -54,10 +54,10 @@ def _sharpen(gray: np.ndarray) -> np.ndarray:
 
 
 def convert(image: np.ndarray, mode: InputMode = "rgb") -> np.ndarray:
-    rgb = _ensure_rgb(image)
+    rgb = _to_rgb(image)
     if mode == "rgb":
         return rgb
-    gray = _convert_gray(rgb)
+    gray = _to_gray(rgb)
     if mode == "gray_repeat":
         return np.repeat(gray[..., None], 3, axis=2)
     if mode == "gray_features":

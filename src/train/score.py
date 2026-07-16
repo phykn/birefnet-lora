@@ -3,28 +3,28 @@ import numpy as np
 import torch
 
 
-def score_brier(
+def brier(
     logits: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    if valid_mask is None:
-        valid_mask = torch.ones_like(target)
-    error = (torch.sigmoid(logits) - target.clamp(0, 1)).square() * valid_mask
-    return error.sum() / valid_mask.sum().clamp_min(1.0)
+    if valid is None:
+        valid = torch.ones_like(target)
+    error = (torch.sigmoid(logits) - target.clamp(0, 1)).square() * valid
+    return error.sum() / valid.sum().clamp_min(1.0)
 
 
-def score_ece(
+def ece(
     logits: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
     bins: int = 10,
 ) -> torch.Tensor:
     if bins <= 0:
         raise ValueError("bins must be positive")
-    if valid_mask is None:
-        valid_mask = torch.ones_like(target)
-    active = valid_mask > 0.5
+    if valid is None:
+        valid = torch.ones_like(target)
+    active = valid > 0.5
     probability = torch.sigmoid(logits)[active]
     labels = target[active].clamp(0, 1)
     if probability.numel() == 0:
@@ -47,16 +47,16 @@ def score_ece(
     return ece
 
 
-def score_iou(
+def iou(
     probability: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
     threshold: float = 0.5,
 ) -> torch.Tensor:
-    if valid_mask is None:
-        valid_mask = torch.ones_like(target)
-    pred = (probability >= threshold).to(target.dtype) * valid_mask
-    target = (target > 0.5).to(target.dtype) * valid_mask
+    if valid is None:
+        valid = torch.ones_like(target)
+    pred = (probability >= threshold).to(target.dtype) * valid
+    target = (target > 0.5).to(target.dtype) * valid
     dims = tuple(range(1, pred.ndim))
     intersection = (pred * target).sum(dim=dims)
     union = pred.sum(dim=dims) + target.sum(dim=dims) - intersection
@@ -68,27 +68,25 @@ def score_iou(
     return scores.mean()
 
 
-def score_iou_logits(
+def iou_logits(
     logits: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
     threshold: float = 0.5,
 ) -> torch.Tensor:
-    return score_iou(
-        torch.sigmoid(logits), target, valid_mask, threshold
-    )
+    return iou(torch.sigmoid(logits), target, valid, threshold)
 
 
-def score_dice(
+def dice(
     logits: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
     threshold: float = 0.5,
 ) -> torch.Tensor:
-    if valid_mask is None:
-        valid_mask = torch.ones_like(target)
-    pred = (torch.sigmoid(logits) >= threshold).to(target.dtype) * valid_mask
-    target = (target > 0.5).to(target.dtype) * valid_mask
+    if valid is None:
+        valid = torch.ones_like(target)
+    pred = (torch.sigmoid(logits) >= threshold).to(target.dtype) * valid
+    target = (target > 0.5).to(target.dtype) * valid
     dims = tuple(range(1, pred.ndim))
     intersection = (pred * target).sum(dim=dims)
     total = pred.sum(dim=dims) + target.sum(dim=dims)
@@ -100,7 +98,7 @@ def score_dice(
     return scores.mean()
 
 
-def _find_boundary(mask: np.ndarray) -> np.ndarray:
+def _find_edge(mask: np.ndarray) -> np.ndarray:
     binary = (mask > 0).astype(np.uint8)
     kernel = np.ones((3, 3), dtype=np.uint8)
     eroded = cv2.erode(
@@ -113,13 +111,13 @@ def _find_boundary(mask: np.ndarray) -> np.ndarray:
     return binary - eroded
 
 
-def score_boundary(
+def boundary(
     prediction: np.ndarray,
     target: np.ndarray,
     tolerance_px: float = 2.0,
 ) -> float:
-    pred_boundary = _find_boundary(prediction)
-    target_boundary = _find_boundary(target)
+    pred_boundary = _find_edge(prediction)
+    target_boundary = _find_edge(target)
     pred_count = int(pred_boundary.sum())
     target_count = int(target_boundary.sum())
     if pred_count == 0 and target_count == 0:
@@ -150,21 +148,21 @@ def score_boundary(
     return 2.0 * precision * recall / (precision + recall)
 
 
-def score_boundary_logits(
+def boundary_logits(
     logits: torch.Tensor,
     target: torch.Tensor,
-    valid_mask: torch.Tensor | None = None,
+    valid: torch.Tensor | None = None,
     threshold: float = 0.5,
     tolerance_px: float = 2.0,
 ) -> float:
-    if valid_mask is None:
-        valid_mask = torch.ones_like(target)
-    pred = ((torch.sigmoid(logits) >= threshold) * (valid_mask > 0.5)).cpu().numpy()
-    gt = ((target > 0.5) * (valid_mask > 0.5)).cpu().numpy()
+    if valid is None:
+        valid = torch.ones_like(target)
+    pred = ((torch.sigmoid(logits) >= threshold) * (valid > 0.5)).cpu().numpy()
+    gt = ((target > 0.5) * (valid > 0.5)).cpu().numpy()
     return float(
         np.mean(
             [
-                score_boundary(p[0], t[0], tolerance_px=tolerance_px)
+                boundary(p[0], t[0], tolerance_px=tolerance_px)
                 for p, t in zip(pred, gt)
             ]
         )

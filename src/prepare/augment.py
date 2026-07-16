@@ -5,14 +5,14 @@ import numpy as np
 
 
 def flip(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    rot_k = int(np.random.randint(4))
-    do_hflip = bool(np.random.randint(2))
-    return _flip(image, rot_k, do_hflip), _flip(mask, rot_k, do_hflip)
+    turns = int(np.random.randint(4))
+    mirror = bool(np.random.randint(2))
+    return _flip(image, turns, mirror), _flip(mask, turns, mirror)
 
 
-def _flip(x: np.ndarray, rot_k: int, do_hflip: bool) -> np.ndarray:
-    x = np.rot90(x, k=rot_k)
-    if do_hflip:
+def _flip(x: np.ndarray, turns: int, mirror: bool) -> np.ndarray:
+    x = np.rot90(x, k=turns)
+    if mirror:
         x = np.fliplr(x)
     return np.ascontiguousarray(x)
 
@@ -57,10 +57,10 @@ def crop(
     )
 
 
-def jitter(image: np.ndarray, value_range: tuple[float, float]) -> np.ndarray:
-    brightness_max, contrast_max = value_range
-    brightness = random.uniform(-brightness_max, brightness_max)
+def jitter(image: np.ndarray, limits: tuple[float, float]) -> np.ndarray:
+    bright_max, contrast_max = limits
+    bright = random.uniform(-bright_max, bright_max)
     contrast = random.uniform(-contrast_max, contrast_max)
     x = image.astype(np.float32) / 255.0
-    x = (x - 0.5) * (1.0 + contrast) + 0.5 + brightness
+    x = (x - 0.5) * (1.0 + contrast) + 0.5 + bright
     return np.rint(np.clip(x, 0.0, 1.0) * 255.0).astype(np.uint8)

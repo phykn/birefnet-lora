@@ -87,23 +87,21 @@ def test_boundary_bce_ignores_padding():
 
 
 class _TrainModel(nn.Module):
-    """Mimics LoRABiRefNet output: ModelOutput in both modes."""
-
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(3, 1, 1)
 
     def forward(self, x):
-        from src.model.lora.model import ModelOutput
+        from src.adapt.wrap import Output
 
         pred = self.conv(x)
         if self.training:
             gdt_pred = pred[:, :, ::2, ::2]
             gdt_label = torch.zeros_like(pred)
-            return ModelOutput(
-                preds=[pred, pred], gdt=([gdt_pred], [gdt_label])
+            return Output(
+                logits=[pred, pred], gdt=([gdt_pred], [gdt_label])
             )
-        return ModelOutput(preds=[pred], gdt=None)
+        return Output(logits=[pred], gdt=None)
 
 
 def test_multiscale_boundary_loss_is_not_diluted():
@@ -112,7 +110,7 @@ def test_multiscale_boundary_loss_is_not_diluted():
     mask = torch.zeros(1, 1, 64, 64)
     mask[:, :, 16:48, 16:48] = 1
     valid = torch.ones_like(mask)
-    parts = loss_fn._compute_segments(preds, mask, valid)
+    parts = loss_fn._segment(preds, mask, valid)
     expected = loss_fn.seg.compute(preds[-1], mask, valid)["boundary"]
     assert torch.allclose(parts["boundary"], expected)
 
@@ -125,8 +123,8 @@ def test_gdt_loss_ignores_letterbox_padding():
     reference_pred = torch.zeros_like(label)
     changed_pred = reference_pred.clone()
     changed_pred[:, :, :, 4:] = 100
-    reference = loss_fn._compute_gdt(([reference_pred], [label]), valid)
-    changed = loss_fn._compute_gdt(([changed_pred], [label]), valid)
+    reference = loss_fn._guide(([reference_pred], [label]), valid)
+    changed = loss_fn._guide(([changed_pred], [label]), valid)
     assert torch.allclose(changed, reference)
 
 
@@ -134,7 +132,7 @@ def test_teacher_only_reduces_conflicting_confident_gt():
     loss_fn = TrainLoss(teacher_confidence=0.95, min_gt_weight=0.25)
     target = torch.zeros(1, 1, 1, 2)
     teacher = torch.tensor([[[[20.0, -20.0]]]])
-    weight, confidence, _ = loss_fn._make_weight(teacher, target, scale=1.0)
+    weight, confidence, _ = loss_fn._weigh(teacher, target, scale=1.0)
     assert torch.allclose(weight, torch.tensor([[[[0.25, 1.0]]]]))
     assert torch.all(confidence > 0.99)
 
@@ -142,10 +140,10 @@ def test_teacher_only_reduces_conflicting_confident_gt():
 def test_custom_loss_train_mode_returns_all_terms():
     model = _TrainModel().train()
     batch = {
-        "image_1": torch.randn(2, 3, 8, 8),
-        "image_2": torch.randn(2, 3, 8, 8),
+        "weak": torch.randn(2, 3, 8, 8),
+        "strong": torch.randn(2, 3, 8, 8),
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
-        "valid_mask": torch.ones(2, 1, 8, 8),
+        "valid": torch.ones(2, 1, 8, 8),
     }
     loss_dict, loss = TrainLoss()(model, batch)
     assert {
@@ -168,10 +166,10 @@ def test_custom_loss_train_mode_returns_all_terms():
 def test_custom_loss_eval_mode_returns_seg_only():
     model = _TrainModel().eval()
     batch = {
-        "image_1": torch.randn(2, 3, 8, 8),
-        "image_2": torch.randn(2, 3, 8, 8),
+        "weak": torch.randn(2, 3, 8, 8),
+        "strong": torch.randn(2, 3, 8, 8),
         "mask": torch.randint(0, 2, (2, 1, 8, 8)).float(),
-        "valid_mask": torch.ones(2, 1, 8, 8),
+        "valid": torch.ones(2, 1, 8, 8),
     }
     loss_dict, loss = TrainLoss()(model, batch)
     assert {

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from ..infer.predict import predict as run_predict
+from ..predict.run import predict as predict_mask
 
 from .codec import ImageLimitError, decode, encode
 from .schema import HealthResponse, PredictRequest, PredictResponse
@@ -31,8 +31,8 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="invalid image") from exc
 
-        result = await run_in_threadpool(
-            run_predict,
+        mask = await run_in_threadpool(
+            predict_mask,
             request.app.state.model,
             image,
             output_mode=body.output_mode,
@@ -43,15 +43,15 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
             tile_batch=settings["tile_batch"],
             context_weight=settings["context_weight"],
         )
-        encoded = await run_in_threadpool(encode, result)
+        data = await run_in_threadpool(encode, mask)
 
-    height, width = result.shape[:2]
+    height, width = mask.shape[:2]
     return PredictResponse(
         id=body.id,
-        base64_str=encoded,
+        base64_str=data,
         height=height,
         width=width,
-        channel=result.shape[2] if result.ndim == 3 else None,
+        channel=mask.shape[2] if mask.ndim == 3 else None,
         output_mode=body.output_mode,
         threshold_applied=threshold if body.output_mode == "binary" else None,
     )

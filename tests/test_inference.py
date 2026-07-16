@@ -2,9 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from src.infer.predict import predict, predict_logits
-from src.infer.tile import TileBox, make_window, plan_tiles
-from src.model.lora.model import ModelOutput
+from src.adapt.wrap import Output
+from src.predict.run import predict, predict_logits
+from src.predict.tile import Tile, plan, weigh
 
 
 class _ConstantModel(nn.Module):
@@ -14,11 +14,11 @@ class _ConstantModel(nn.Module):
 
     def forward(self, x):
         output = self.logit.expand(x.shape[0], 1, x.shape[2], x.shape[3])
-        return ModelOutput(preds=[output])
+        return Output(logits=[output])
 
 
 def test_tile_planner_covers_image_and_aligns_last_tile():
-    boxes = plan_tiles(45, 61, size=24, overlap_ratio=1 / 3)
+    boxes = plan(45, 61, size=24, overlap_ratio=1 / 3)
     assert max(box.bottom for box in boxes) == 45
     assert max(box.right for box in boxes) == 61
     coverage = np.zeros((45, 61), dtype=np.int32)
@@ -28,13 +28,13 @@ def test_tile_planner_covers_image_and_aligns_last_tile():
 
 
 def test_tile_planner_uses_two_or_three_by_two_or_three_grid():
-    assert len(plan_tiles(1500, 1500, size=1024)) == 4
-    assert len(plan_tiles(2000, 2000, size=1024)) == 9
+    assert len(plan(1500, 1500, size=1024)) == 4
+    assert len(plan(2000, 2000, size=1024)) == 9
 
 
 def test_tile_planner_keeps_overlap_at_least_one_third():
     for height, width in [(1500, 1500), (2000, 2000), (3000, 4000)]:
-        boxes = plan_tiles(height, width, size=1024, overlap_ratio=1 / 3)
+        boxes = plan(height, width, size=1024, overlap_ratio=1 / 3)
         for box in boxes:
             if box.overlap_top:
                 assert box.overlap_top / box.height >= 1 / 3
@@ -47,7 +47,7 @@ def test_tile_planner_keeps_overlap_at_least_one_third():
 
 
 def test_blend_window_is_symmetric_and_keeps_outer_edges_nonzero():
-    box = TileBox(
+    box = Tile(
         0,
         0,
         12,
@@ -57,21 +57,21 @@ def test_blend_window_is_symmetric_and_keeps_outer_edges_nonzero():
         overlap_bottom=4,
         overlap_right=5,
     )
-    window = make_window(box)
+    window = weigh(box)
     np.testing.assert_allclose(window, window[::-1, :])
     np.testing.assert_allclose(window, window[:, ::-1])
 
-    outer = make_window(TileBox(0, 0, 12, 16, overlap_bottom=4, overlap_right=5))
+    outer = weigh(Tile(0, 0, 12, 16, overlap_bottom=4, overlap_right=5))
     assert np.all(outer[0] > 0)
     assert np.all(outer[:, 0] > 0)
 
 
 def test_neighboring_cosine_windows_are_complementary():
-    left, right = plan_tiles(1500, 1500, size=1024)[:2]
+    left, right = plan(1500, 1500, size=1024)[:2]
     overlap = left.overlap_right
     assert overlap == right.overlap_left
-    left_window = make_window(left)
-    right_window = make_window(right)
+    left_window = weigh(left)
+    right_window = weigh(right)
     np.testing.assert_allclose(
         left_window[0, -overlap:] + right_window[0, :overlap],
         1.0,

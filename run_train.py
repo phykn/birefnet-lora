@@ -1,28 +1,21 @@
 import argparse
-import csv
+from pathlib import Path
 
 import torch
 from omegaconf import OmegaConf
 
-from src.build.data import build_loaders
-from src.build.model import build_base, wrap_lora
-from src.build.train import build_trainer
+from src.build.data import build as build_data
+from src.build.model import adapt
+from src.build.model import build as build_model
+from src.build.split import load as load_splits
+from src.build.split import save as save_splits
+from src.build.trainer import build as build_trainer
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume")
     return parser.parse_args()
-
-
-def save_splits(splits: dict[str, list[str]], output_dir: str) -> None:
-    for split in ["train", "valid", "calib"]:
-        with open(f"{output_dir}/{split}.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["image", "mask"])
-            writer.writerows(
-                zip(splits[f"{split}_image"], splits[f"{split}_mask"])
-            )
 
 
 def main() -> None:
@@ -33,9 +26,16 @@ def main() -> None:
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    base = build_base(cfg).to(device)
-    model = wrap_lora(cfg, base)
-    train_loader, valid_loader, calib_loader, splits = build_loaders(cfg)
+    base = build_model(cfg).to(device)
+    model = adapt(cfg, base)
+    saved_splits = None
+    if args.resume:
+        run_dir = Path(args.resume).resolve().parent.parent
+        saved_splits = load_splits(run_dir)
+    train_loader, valid_loader, calib_loader, splits = build_data(
+        cfg,
+        saved_splits,
+    )
     trainer = build_trainer(
         cfg=cfg,
         model=model,
@@ -57,7 +57,7 @@ def main() -> None:
     )
 
     OmegaConf.save(cfg, f"{trainer.save_dir}/config.yaml")
-    save_splits(splits=splits, output_dir=trainer.save_dir)
+    save_splits(splits, trainer.save_dir)
 
     trainer.train(
         steps=cfg.train.steps,

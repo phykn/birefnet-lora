@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.model.lora.model import ModelOutput
+from src.adapt.wrap import Output
 from src.train.teacher import Teacher
 
 
@@ -11,8 +11,8 @@ class _Model(nn.Module):
         self.weight = nn.Parameter(torch.tensor(1.0))
         self.frozen = nn.Parameter(torch.tensor(2.0), requires_grad=False)
 
-    def forward(self, x: torch.Tensor) -> ModelOutput:
-        return ModelOutput(preds=[x * self.weight + self.frozen])
+    def forward(self, x: torch.Tensor) -> Output:
+        return Output(logits=[x * self.weight + self.frozen])
 
 
 def test_teacher_tracks_only_trainable_params_and_restores_mode():

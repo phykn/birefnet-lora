@@ -9,8 +9,8 @@ from .overlay import OverlayMixin
 
 
 @dataclass
-class ModelOutput:
-    preds: list[torch.Tensor]
+class Output:
+    logits: list[torch.Tensor]
     gdt: tuple[list[torch.Tensor], list[torch.Tensor]] | None = None
 
 
@@ -50,7 +50,7 @@ class LoRABiRefNet(OverlayMixin, nn.Module):
             model=self.model.squeeze_module,
             rank=self.rank,
             alpha=self.alpha,
-            exclude_names=geometry_convs,
+            skip_names=geometry_convs,
         )
 
         head_paths = []
@@ -66,8 +66,8 @@ class LoRABiRefNet(OverlayMixin, nn.Module):
             model=self.model.decoder,
             rank=self.rank,
             alpha=self.alpha,
-            exclude_names=geometry_convs,
-            exclude_paths=head_paths,
+            skip_names=geometry_convs,
+            skip_paths=head_paths,
         )
 
         for path in self.trainable_heads:
@@ -113,17 +113,17 @@ class LoRABiRefNet(OverlayMixin, nn.Module):
         gdt_preds, gdt_labels = gdt_pair
         return list(gdt_preds), list(gdt_labels), list(preds)
 
-    def _train_step(self, x: torch.Tensor) -> ModelOutput:
+    def _train_step(self, x: torch.Tensor) -> Output:
         gdt_preds, gdt_labels, preds = self._unpack(self.model(x))
-        return ModelOutput(preds=preds, gdt=(gdt_preds, gdt_labels))
+        return Output(logits=preds, gdt=(gdt_preds, gdt_labels))
 
-    def _eval_step(self, x: torch.Tensor) -> ModelOutput:
+    def _eval_step(self, x: torch.Tensor) -> Output:
         preds = self.model(x)
         if not isinstance(preds, (list, tuple)):
             raise RuntimeError("Raw BiRefNet eval output must be a prediction list.")
-        return ModelOutput(preds=list(preds), gdt=None)
+        return Output(logits=list(preds), gdt=None)
 
-    def forward(self, x: torch.Tensor) -> ModelOutput:
+    def forward(self, x: torch.Tensor) -> Output:
         if self.training:
             return self._train_step(x)
         return self._eval_step(x)

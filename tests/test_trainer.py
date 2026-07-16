@@ -6,9 +6,10 @@ import torch.nn as nn
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
+from src.adapt.wrap import Output
+from src.train.run import Trainer
 from src.train.schedule import CosineSchedule
 from src.train.teacher import Teacher
-from src.train.trainer import Trainer
 
 
 class _DummyModel(nn.Module):
@@ -17,12 +18,10 @@ class _DummyModel(nn.Module):
         self.conv = nn.Conv2d(3, 1, 1)
 
     def forward(self, x):
-        from src.model.lora.model import ModelOutput
-
         pred = self.conv(x)
         if self.training:
-            return ModelOutput(preds=[pred, pred])
-        return ModelOutput(preds=[pred])
+            return Output(logits=[pred, pred])
+        return Output(logits=[pred])
 
     def list_trainable(self):
         return list(self.parameters())
@@ -41,22 +40,23 @@ class _DummyModel(nn.Module):
 
     def save_overlay(self, path, extra=None):
         payload = self.make_overlay(extra)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(payload, path)
 
 
 class _DummyCriterion(nn.Module):
-    def forward(self, model, batch, teacher_logits=None, teacher_scale=0.0):
+    def forward(self, model, batch, teacher_logit=None, teacher_scale=0.0):
         device = next(model.parameters()).device
         if model.training:
-            out = model(batch["image_1"].to(device))
-            preds = out.preds
-            seg = sum(p.mean() ** 2 for p in preds) / len(preds)
-            cons = (preds[0] - preds[-1]).pow(2).mean()
+            out = model(batch["weak"].to(device))
+            logits = out.logits
+            seg = sum(logit.mean() ** 2 for logit in logits) / len(logits)
+            cons = (logits[0] - logits[-1]).pow(2).mean()
             aux = torch.tensor(0.0, device=device)
             loss = seg + cons + aux
             return {"loss": loss, "seg": seg, "cons": cons, "aux": aux}, loss
-        out = model(batch["image_1"].to(device))
-        pred = out.preds[-1]
+        out = model(batch["weak"].to(device))
+        pred = out.logits[-1]
         seg = pred.mean() ** 2
         return {"loss": seg, "seg": seg}, seg
 
@@ -70,10 +70,10 @@ class _DummyDataset(Dataset):
 
     def __getitem__(self, idx):
         return {
-            "image_1": torch.randn(3, 8, 8),
-            "image_2": torch.randn(3, 8, 8),
+            "weak": torch.randn(3, 8, 8),
+            "strong": torch.randn(3, 8, 8),
             "mask": torch.randint(0, 2, (1, 8, 8)).float(),
-            "valid_mask": torch.ones(1, 8, 8),
+            "valid": torch.ones(1, 8, 8),
         }
 
 
@@ -117,8 +117,9 @@ def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path):
     trainer = _make_trainer(tmp_path)
     before = trainer.model.conv.weight.detach().clone()
 
-    losses = trainer.step()
+    losses, updated = trainer.step()
 
+    assert updated
     assert {"loss", "seg", "cons", "aux"} <= set(losses.keys())
     assert all(isinstance(v, float) for v in losses.values())
     after = trainer.model.conv.weight
@@ -127,7 +128,8 @@ def test_trainer_step_returns_loss_dict_and_updates_params(tmp_path):
 
 def test_trainer_step_with_accum(tmp_path):
     trainer = _make_trainer(tmp_path, accum_steps=2)
-    losses = trainer.step()
+    losses, updated = trainer.step()
+    assert updated
     assert "loss" in losses
 
 
@@ -143,7 +145,7 @@ def test_trainer_get_batch_wraps_around(tmp_path):
     trainer = _make_trainer(tmp_path)
     for _ in range(6):
         batch = trainer.next_batch()
-        assert "image_1" in batch
+        assert "weak" in batch
 
 
 def test_trainer_save_writes_overlay_and_resume_state(tmp_path):
@@ -156,7 +158,8 @@ def test_trainer_save_writes_overlay_and_resume_state(tmp_path):
 
 def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):
     trainer = _make_trainer(tmp_path)
-    trainer.step()
+    _, updated = trainer.step()
+    assert updated
     expected_weight = trainer.model.conv.weight.detach().clone()
     expected_teacher = trainer.teacher.state_dict()
     expected_lr = trainer.optimizer.param_groups[0]["lr"]
@@ -170,6 +173,94 @@ def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):
     assert resumed.scheduler.step_in_cycle == trainer.scheduler.step_in_cycle
     for name, value in expected_teacher.items():
         assert torch.allclose(resumed.teacher.state_dict()[name], value)
+
+
+class _SkipScaler:
+    def __init__(self):
+        self.value = 2.0
+        self.attempts = 0
+
+    def scale(self, loss):
+        return loss
+
+    def unscale_(self, optimizer):
+        pass
+
+    def step(self, optimizer):
+        self.attempts += 1
+        if self.attempts > 1:
+            optimizer.step()
+
+    def update(self):
+        if self.attempts == 1:
+            self.value = 1.0
+
+    def get_scale(self):
+        return self.value
+
+
+def test_overflow_skip_keeps_optimizer_dependent_state(tmp_path):
+    trainer = _make_trainer(tmp_path)
+    trainer.scaler = _SkipScaler()
+    weight = trainer.model.conv.weight.detach().clone()
+    teacher = trainer.teacher.state_dict()
+    cycle = trainer.scheduler.step_in_cycle
+
+    _, updated = trainer.step()
+
+    assert not updated
+    assert trainer.global_step == 0
+    assert trainer.scheduler.step_in_cycle == cycle
+    assert torch.allclose(trainer.model.conv.weight, weight)
+    for name, value in teacher.items():
+        assert torch.allclose(trainer.teacher.state_dict()[name], value)
+
+
+def test_training_retries_skipped_update(tmp_path):
+    trainer = _make_trainer(tmp_path)
+    scaler = _SkipScaler()
+    trainer.scaler = scaler
+    trainer.save = lambda: None
+
+    trainer.train(steps=1, val_freq=2, save_freq=10)
+
+    assert scaler.attempts == 2
+    assert trainer.global_step == 1
+
+
+def test_best_selection_uses_calibrated_deployment_threshold(tmp_path):
+    trainer = _make_trainer(tmp_path)
+    calls = []
+
+    def calibrate():
+        calls.append("calibrate")
+        trainer.calib_threshold = 0.63
+        return 0.63
+
+    def validate():
+        calls.append("validate")
+        return {"loss": 0.0}
+
+    def validate_deploy(threshold):
+        calls.append(("deploy", threshold))
+        return {
+            "deploy_region_iou": 0.8,
+            "deploy_dice": 0.85,
+            "deploy_boundary_f1": 0.7,
+        }
+
+    trainer.calibrate = calibrate
+    trainer.validate = validate
+    trainer.validate_deploy = validate_deploy
+    trainer.train(steps=1, val_freq=1, save_freq=10)
+
+    assert calls == ["calibrate", "validate", ("deploy", 0.63)]
+    payload = torch.load(
+        tmp_path / "weights" / "best_boundary.overlay.pth",
+        map_location="cpu",
+        weights_only=True,
+    )
+    assert payload["meta"]["selection"]["threshold"] == 0.63
 
 
 def test_calibration_and_deployment_validation_use_native_inference(tmp_path):

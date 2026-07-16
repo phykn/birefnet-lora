@@ -5,15 +5,14 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader
 
-from ..model.lora.model import LoRABiRefNet
+from ..adapt.wrap import LoRABiRefNet
 from ..train.loss import TrainLoss
 from ..train.schedule import CosineSchedule
 from ..train.teacher import Teacher
-from ..train.trainer import Trainer
-from .options import get
+from ..train.run import Trainer
 
 
-def build_trainer(
+def build(
     cfg: Any,
     model: LoRABiRefNet,
     train_loader: DataLoader,
@@ -52,11 +51,11 @@ def build_trainer(
                 "lr": float(cfg.train.max_lr),
                 "max_lr": float(cfg.train.max_lr),
                 "min_lr": float(cfg.train.min_lr),
-                "weight_decay": float(get(cfg.train, "weight_decay", 0.01)),
+                "weight_decay": float(cfg.train.get("weight_decay", 0.01)),
             }
         )
     if head_params:
-        scale = float(get(cfg.train, "head_lr_scale", 0.5))
+        scale = float(cfg.train.get("head_lr_scale", 0.5))
         param_groups.append(
             {
                 "name": "heads",
@@ -64,7 +63,7 @@ def build_trainer(
                 "lr": float(cfg.train.max_lr) * scale,
                 "max_lr": float(cfg.train.max_lr) * scale,
                 "min_lr": float(cfg.train.min_lr) * scale,
-                "weight_decay": float(get(cfg.train, "head_weight_decay", 0.01)),
+                "weight_decay": float(cfg.train.get("head_weight_decay", 0.01)),
             }
         )
     if not param_groups:

@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from src.model.lora.inject import inject_conv, inject_linear
-from src.model.lora.layers import LoRAConv2d, LoRALinear
+from src.adapt.inject import inject_conv, inject_linear
+from src.adapt.layer import LoRAConv2d, LoRALinear
 
 
 def test_lora_linear_initially_identity():
@@ -69,7 +69,7 @@ def test_apply_conv2d_respects_excludes():
             self.offset_conv = nn.Conv2d(4, 4, 3, padding=1)
 
     net = Net()
-    inject_conv(net, rank=2, alpha=4.0, exclude_names=["offset_conv"])
+    inject_conv(net, rank=2, alpha=4.0, skip_names=["offset_conv"])
     assert isinstance(net.conv, LoRAConv2d)
     assert isinstance(net.offset_conv, nn.Conv2d)
     assert not isinstance(net.offset_conv, LoRAConv2d)

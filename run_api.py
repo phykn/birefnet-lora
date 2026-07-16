@@ -7,11 +7,12 @@ import uvicorn
 from fastapi import FastAPI
 from omegaconf import OmegaConf
 
-from src.api.routes import router
-from src.build.model import build_base, load_lora
+from src.build.model import build as build_model
+from src.build.model import load as load_model_overlay
+from src.serve.route import router
 
 
-def _parse_args() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
     parser.add_argument("--port", required=True, type=int)
@@ -19,18 +20,18 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_model(path: str, device: torch.device):
+def load_model(path: str, device: torch.device):
     cfg = OmegaConf.merge(
         OmegaConf.load("config/tune.yaml"),
         OmegaConf.load("config/model.yaml"),
     )
-    base = build_base(cfg).to(device)
-    model = load_lora(cfg, base, path)
+    base = build_model(cfg).to(device)
+    model = load_model_overlay(cfg, base, path)
     model.eval()
     return model, cfg
 
 
-def _read_threshold(model: Any) -> float | None:
+def read_threshold(model: Any) -> float | None:
     meta = model.loaded_meta or {}
     value = meta.get("selection", {}).get("threshold")
     return None if value is None else float(value)
@@ -53,9 +54,9 @@ def build_app(
 
 
 def main() -> None:
-    args = _parse_args()
+    args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, cfg = _load_model(args.weight, device)
+    model, cfg = load_model(args.weight, device)
     settings = dict((model.loaded_meta or {}).get("inference", {}))
     required = {
         "size",
@@ -71,7 +72,7 @@ def main() -> None:
         model=model,
         device=device,
         settings=settings,
-        threshold=_read_threshold(model),
+        threshold=read_threshold(model),
     )
     uvicorn.run(app, host=args.host, port=args.port)
 

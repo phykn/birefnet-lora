@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 
 from .augment import crop, flip, jitter
-from .input import InputMode, convert
-from .io import read_mask, read_rgb
-from .letterbox import prepare_image, prepare_mask
+from .convert import InputMode, convert
+from .fit import fit_image, fit_mask
+from .read import read_image, read_mask
 
 
 class MaskDataset:
@@ -49,36 +49,36 @@ class MaskDataset:
                 self.boundary_prob,
             )
             image, mask = flip(image, mask)
-            first = jitter(image, self.weak)
-            second = jitter(image, self.strong)
+            weak = jitter(image, self.weak)
+            strong = jitter(image, self.strong)
         else:
-            first = image
+            weak = image
 
-        image_1, valid_mask, geometry = prepare_image(
-            first,
+        weak, valid, fit = fit_image(
+            weak,
             size=self.size,
             mode="rgb",
         )
         binary_mask = (mask > 127).astype(np.float32)
         sample = {
-            "image_1": image_1,
-            "mask": prepare_mask(binary_mask, geometry),
-            "valid_mask": valid_mask,
+            "weak": weak,
+            "mask": fit_mask(binary_mask, fit),
+            "valid": valid,
         }
         if self.train:
-            image_2, valid_mask_2, geometry_2 = prepare_image(
-                second,
+            strong, strong_valid, strong_fit = fit_image(
+                strong,
                 size=self.size,
                 mode="rgb",
             )
-            if geometry_2 != geometry or not np.array_equal(valid_mask_2, valid_mask):
+            if strong_fit != fit or not np.array_equal(strong_valid, valid):
                 raise RuntimeError("Two-view augmentation produced mismatched geometry.")
-            sample["image_2"] = image_2
+            sample["strong"] = strong
         return sample
 
     def _load(self, index: int) -> tuple[np.ndarray, np.ndarray]:
         image_path, mask_path = self.data[index]
-        image = read_rgb(image_path)
+        image = read_image(image_path)
         mask = read_mask(mask_path)
         if image.shape[:2] != mask.shape[:2]:
             raise ValueError(

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-PREDICT_TARGET = "src.api.routes.run_predict"
+PREDICT_TARGET = "src.serve.route.predict_mask"
 
 
 def _encode(image: np.ndarray) -> str:
@@ -118,7 +118,7 @@ def test_rejects_invalid_output_contract(api_client):
 )
 def test_rejects_large_image(monkeypatch, api_client, name, limit):
     monkeypatch.setattr(
-        f"src.api.codec.{name}",
+        f"src.serve.codec.{name}",
         limit,
     )
     monkeypatch.setattr(

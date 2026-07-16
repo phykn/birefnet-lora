@@ -41,9 +41,7 @@ class LoRAConv2d(nn.Module):
             param.requires_grad = False
 
         if conv.groups != 1:
-            raise ValueError(
-                "LoRAConv2d currently supports grouped conv only when groups=1."
-            )
+            raise ValueError("LoRAConv2d requires groups=1.")
 
         self.down = nn.Conv2d(
             in_channels=conv.in_channels,

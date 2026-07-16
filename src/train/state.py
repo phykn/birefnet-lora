@@ -5,7 +5,8 @@ from typing import Any
 
 import torch
 
-def _atomic_save(payload: dict[str, Any], path: str) -> None:
+
+def _save(payload: dict[str, Any], path: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
@@ -22,7 +23,7 @@ class CheckpointMixin:
         weights_dir = Path(self.save_dir) / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
         overlay = self.model.make_overlay({"inference": self.inference})
-        _atomic_save(overlay, str(weights_dir / "last.overlay.pth"))
+        _save(overlay, str(weights_dir / "last.overlay.pth"))
         training_state = {
             "overlay": overlay,
             "optimizer": self.optimizer.state_dict(),
@@ -34,7 +35,7 @@ class CheckpointMixin:
             "best_boundary": self.best_boundary,
             "threshold": self.calib_threshold,
         }
-        _atomic_save(training_state, str(weights_dir / "last.train.pth"))
+        _save(training_state, str(weights_dir / "last.train.pth"))
 
     def save_best(self, name: str, metrics: dict[str, float]) -> None:
         weights_dir = Path(self.save_dir) / "weights"

@@ -4,9 +4,9 @@ from typing import Literal
 import numpy as np
 import torch
 
-from ..data.input import InputMode, convert
-from ..data.letterbox import prepare_image, restore_logit
-from .tile import make_window, plan_tiles
+from ..prepare.convert import InputMode, convert
+from ..prepare.fit import fit_image, restore
+from .tile import plan, weigh
 
 OutputMode = Literal["binary", "probability"]
 
@@ -42,46 +42,46 @@ def predict_logits(
     device = next(model.parameters()).device
     processed = convert(image, mode=mode)
     height, width = processed.shape[:2]
-    boxes = plan_tiles(height, width, size=size, overlap_ratio=overlap_ratio)
+    tiles = plan(height, width, size=size, overlap_ratio=overlap_ratio)
     merged = np.zeros((height, width), dtype=np.float32)
-    weights = np.zeros((height, width), dtype=np.float32)
+    weight = np.zeros((height, width), dtype=np.float32)
 
-    for start in range(0, len(boxes), tile_batch):
-        chunk = boxes[start : start + tile_batch]
-        prepared = []
-        geometries = []
-        for box in chunk:
-            tile = processed[box.top : box.bottom, box.left : box.right]
-            tensor, _, geometry = prepare_image(tile, size=size, mode="rgb")
-            prepared.append(tensor)
-            geometries.append(geometry)
+    for start in range(0, len(tiles), tile_batch):
+        chunk = tiles[start : start + tile_batch]
+        tensors = []
+        fits = []
+        for tile in chunk:
+            crop = processed[tile.top : tile.bottom, tile.left : tile.right]
+            tensor, _, fit = fit_image(crop, size=size, mode="rgb")
+            tensors.append(tensor)
+            fits.append(fit)
 
-        batch = torch.from_numpy(np.stack(prepared)).to(device)
+        batch = torch.from_numpy(np.stack(tensors)).to(device)
         with _autocast(device):
-            logits = model(batch).preds[-1]
+            logits = model(batch).logits[-1]
 
-        for index, (box, geometry) in enumerate(zip(chunk, geometries)):
-            canvas_logit = logits[index, 0].float().cpu().numpy()
-            tile_logit = restore_logit(canvas_logit, geometry)
-            window = make_window(box)
-            region = np.s_[box.top : box.bottom, box.left : box.right]
-            merged[region] += tile_logit * window
-            weights[region] += window
+        for index, (tile, fit) in enumerate(zip(chunk, fits)):
+            canvas = logits[index, 0].float().cpu().numpy()
+            tile_logit = restore(canvas, fit)
+            blend = weigh(tile)
+            region = np.s_[tile.top : tile.bottom, tile.left : tile.right]
+            merged[region] += tile_logit * blend
+            weight[region] += blend
 
-    if np.any(weights <= 0):
+    if np.any(weight <= 0):
         raise RuntimeError("Tile planner left pixels without merge weight")
-    merged /= weights
+    merged /= weight
 
-    if context_weight > 0.0 and len(boxes) > 1:
-        full_tensor, _, geometry = prepare_image(
+    if context_weight > 0.0 and len(tiles) > 1:
+        full_tensor, _, fit = fit_image(
             processed,
             size=size,
             mode="rgb",
         )
         full_batch = torch.from_numpy(full_tensor[None]).to(device)
         with _autocast(device):
-            full_canvas = model(full_batch).preds[-1][0, 0].float().cpu().numpy()
-        full_logit = restore_logit(full_canvas, geometry)
+            full_canvas = model(full_batch).logits[-1][0, 0].float().cpu().numpy()
+        full_logit = restore(full_canvas, fit)
         merged = (1.0 - context_weight) * merged + context_weight * full_logit
 
     return merged

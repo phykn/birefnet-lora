@@ -15,9 +15,9 @@ class ImageLimitError(ValueError):
     pass
 
 
-def decode(value: str) -> np.ndarray:
+def decode(text: str) -> np.ndarray:
     try:
-        raw = base64.b64decode(value, validate=True)
+        raw = base64.b64decode(text, validate=True)
     except (ValueError, binascii.Error) as exc:
         raise ValueError("invalid base64") from exc
 

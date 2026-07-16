@@ -1,8 +1,8 @@
 import numpy as np
 from PIL import Image
 
-from src.data.dataset import MaskDataset
-from src.data.io import read_rgb
+from src.prepare.load import MaskDataset
+from src.prepare.read import read_image
 
 
 def _write_pair(tmp_path):
@@ -19,18 +19,18 @@ def _write_pair(tmp_path):
 
 def test_loader_uses_rgb_channel_order(tmp_path):
     image_path, _ = _write_pair(tmp_path)
-    assert read_rgb(str(image_path))[0, 0].tolist() == [255, 0, 0]
+    assert read_image(str(image_path))[0, 0].tolist() == [255, 0, 0]
 
 
 def test_validation_sample_has_fixed_canvas_binary_mask_and_valid_mask(tmp_path):
     image_path, mask_path = _write_pair(tmp_path)
     dataset = MaskDataset([(str(image_path), str(mask_path))], size=32, train=False)
     sample = dataset[0]
-    assert sample["image_1"].shape == (3, 32, 32)
+    assert sample["weak"].shape == (3, 32, 32)
     assert sample["mask"].shape == (1, 32, 32)
-    assert sample["valid_mask"].shape == (1, 32, 32)
+    assert sample["valid"].shape == (1, 32, 32)
     assert set(np.unique(sample["mask"])) <= {0.0, 1.0}
-    assert np.all(sample["mask"] <= sample["valid_mask"])
+    assert np.all(sample["mask"] <= sample["valid"])
 
 
 def test_training_views_share_geometry(tmp_path):
@@ -42,5 +42,5 @@ def test_training_views_share_geometry(tmp_path):
         global_prob=1.0,
     )
     sample = dataset[0]
-    assert sample["image_1"].shape == sample["image_2"].shape
-    assert sample["mask"].shape == sample["valid_mask"].shape
+    assert sample["weak"].shape == sample["strong"].shape
+    assert sample["mask"].shape == sample["valid"].shape
