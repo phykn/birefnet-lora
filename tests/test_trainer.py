@@ -7,9 +7,10 @@ import torch.nn as nn
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-from src.adapt.wrap import Output
-from src.train.run import Trainer
-from src.train.schedule import CosineSchedule
+from src.model.output import Output
+from src.prepare.spec import PreprocessSpec
+from src.train.trainer import Trainer
+from src.train.scheduler import CosineSchedule
 from src.train.teacher import Teacher
 
 
@@ -77,7 +78,7 @@ class _DummyDataset(Dataset):
         }
 
 
-def _make_trainer(tmp_path, accum_steps=1):
+def _make_trainer(tmp_path, accum_steps=1, preprocess=None):
     model = _DummyModel()
     train_loader = DataLoader(_DummyDataset(4), batch_size=2)
     valid_loader = DataLoader(_DummyDataset(4), batch_size=2)
@@ -103,6 +104,7 @@ def _make_trainer(tmp_path, accum_steps=1):
         save_dir=str(tmp_path),
         max_grad_norm=1.0,
         accum_steps=accum_steps,
+        preprocess=preprocess,
     )
 
 
@@ -144,14 +146,20 @@ def test_trainer_get_batch_wraps_around(tmp_path):
 
 
 def test_trainer_save_writes_overlay_and_resume_state(tmp_path):
-    trainer = _make_trainer(tmp_path)
+    trainer = _make_trainer(
+        tmp_path,
+        preprocess=PreprocessSpec(size=640, mode="gray_repeat"),
+    )
     trainer.save()
     weights_dir = os.path.join(trainer.save_dir, "weights")
     overlay_path = os.path.join(weights_dir, "last.overlay.pth")
     assert os.path.exists(overlay_path)
     assert os.path.exists(os.path.join(weights_dir, "last.train.pth"))
     overlay = torch.load(overlay_path, map_location="cpu", weights_only=True)
-    assert "inference" not in overlay["meta"]
+    assert overlay["meta"]["preprocess"] == {
+        "size": 640,
+        "mode": "gray_repeat",
+    }
 
 
 def test_trainer_resume_restores_step_model_optimizer_and_scheduler(tmp_path):
@@ -227,6 +235,7 @@ def test_training_retries_skipped_update(tmp_path):
     scaler = _SkipScaler()
     trainer.scaler = scaler
     trainer.save = lambda: None
+    trainer._evaluate = lambda: None
 
     trainer.train(steps=1, val_freq=2, save_freq=10)
 
@@ -312,3 +321,54 @@ def test_calibration_and_deployment_validation_use_native_inference(tmp_path):
         "deploy_dice": 1.0,
         "deploy_boundary_f1": 1.0,
     }
+
+
+def test_training_validates_final_non_frequency_step(tmp_path):
+    trainer = _make_trainer(tmp_path)
+    validated = []
+    trainer._evaluate = lambda: validated.append(trainer.global_step)
+    trainer.save = lambda: None
+
+    trainer.train(steps=1, val_freq=2, save_freq=10)
+
+    assert validated == [1]
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("steps", 0), ("val_freq", 0), ("save_freq", 0)],
+)
+def test_training_rejects_non_positive_frequencies(tmp_path, name, value):
+    trainer = _make_trainer(tmp_path)
+    kwargs = {"steps": 1, "val_freq": 2, "save_freq": 2}
+    kwargs[name] = value
+    with pytest.raises(ValueError, match="positive"):
+        trainer.train(**kwargs)
+
+
+def test_trainer_rejects_zero_accumulation(tmp_path):
+    with pytest.raises(ValueError, match="accum_steps"):
+        _make_trainer(tmp_path, accum_steps=0)
+
+
+def test_native_prediction_uses_saved_preprocess(monkeypatch, tmp_path):
+    image_path = tmp_path / "image.png"
+    mask_path = tmp_path / "mask.png"
+    Image.fromarray(np.zeros((8, 12, 3), dtype=np.uint8)).save(image_path)
+    Image.fromarray(np.zeros((8, 12), dtype=np.uint8)).save(mask_path)
+
+    trainer = _make_trainer(
+        tmp_path,
+        preprocess=PreprocessSpec(size=64, mode="gray_features"),
+    )
+    trainer.valid_loader.dataset.data = [(str(image_path), str(mask_path))]
+    captured = {}
+
+    def fake_predict(model, image, **kwargs):
+        captured.update(kwargs)
+        return np.zeros(image.shape[:2], dtype=np.float32)
+
+    monkeypatch.setattr("src.train.validation.predict_logits", fake_predict)
+    list(trainer.predict_native(trainer.valid_loader))
+
+    assert captured == {"size": 64, "mode": "gray_features"}

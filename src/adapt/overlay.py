@@ -1,21 +1,8 @@
-import os
-import uuid
-from pathlib import Path
 from typing import Any
 
 import torch
 
-
-def _save(payload: dict[str, Any], path: str) -> None:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        torch.save(payload, tmp)
-        os.replace(tmp, target)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+from ..storage import atomic_torch_save
 
 
 class OverlayMixin:
@@ -48,7 +35,7 @@ class OverlayMixin:
         }
 
     def save_overlay(self, path: str, extra: dict[str, Any] | None = None) -> None:
-        _save(self.make_overlay(extra), path)
+        atomic_torch_save(self.make_overlay(extra), path)
 
     def _check_meta(self, meta: dict[str, Any]) -> None:
         lora = meta.get("lora", {})

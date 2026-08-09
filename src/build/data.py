@@ -1,22 +1,40 @@
 import os
 from glob import glob
-from pathlib import Path
 from typing import Any
 
 from torch.utils.data import DataLoader
 
-from ..prepare.load import MaskDataset
-from .split import Splits, make, pack, restore
+from ..data.dataset import MaskDataset
+from ..data.pairs import index as index
+from ..data.pairs import pair_files
+from ..data.split import Splits, make, pack, restore
 
 
-def index(paths: list[str]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for path in paths:
-        stem = Path(path).stem
-        if stem in result:
-            raise ValueError(f"Duplicate stem {stem!r}: {result[stem]} vs {path}")
-        result[stem] = path
-    return result
+def _loader(cfg: Any, dataset: MaskDataset, shuffle: bool) -> DataLoader:
+    workers = int(cfg.loader.num_workers)
+    if workers < 0:
+        raise ValueError("loader.num_workers must be non-negative")
+
+    persistent = bool(cfg.loader.get("persistent_workers", workers > 0))
+    if workers == 0 and persistent:
+        raise ValueError("persistent_workers requires num_workers > 0")
+
+    options: dict[str, Any] = {
+        "dataset": dataset,
+        "batch_size": int(cfg.loader.batch),
+        "shuffle": shuffle,
+        "num_workers": workers,
+        "pin_memory": bool(cfg.loader.pin_memory),
+    }
+    if workers > 0:
+        prefetch = int(cfg.loader.get("prefetch_factor", 2))
+        if prefetch < 1:
+            raise ValueError("loader.prefetch_factor must be positive")
+        options.update(
+            persistent_workers=persistent,
+            prefetch_factor=prefetch,
+        )
+    return DataLoader(**options)
 
 
 def build(
@@ -25,17 +43,7 @@ def build(
 ) -> tuple[DataLoader, DataLoader, DataLoader, Splits]:
     image_paths = glob(os.path.join(cfg.data.image_dir, "*"))
     mask_paths = glob(os.path.join(cfg.data.mask_dir, "*"))
-    images = index(image_paths)
-    masks = index(mask_paths)
-
-    missing_masks = sorted(set(images) - set(masks))
-    missing_images = sorted(set(masks) - set(images))
-    if missing_masks or missing_images:
-        raise ValueError(
-            "Image/mask stems do not match: "
-            f"missing_masks={missing_masks[:5]}, missing_images={missing_images[:5]}"
-        )
-    data = [(images[key], masks[key]) for key in sorted(images)]
+    data = pair_files(image_paths, mask_paths)
 
     if len(data) < 3:
         raise ValueError(
@@ -74,26 +82,7 @@ def build(
         mode=cfg.data.get("mode", "rgb"),
     )
 
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=cfg.loader.batch,
-        shuffle=True,
-        num_workers=cfg.loader.num_workers,
-        pin_memory=cfg.loader.pin_memory,
-        drop_last=False,
-    )
-    valid_loader = DataLoader(
-        dataset=valid_dataset,
-        batch_size=cfg.loader.batch,
-        shuffle=False,
-        num_workers=cfg.loader.num_workers,
-        pin_memory=cfg.loader.pin_memory,
-    )
-    calib_loader = DataLoader(
-        dataset=calib_set,
-        batch_size=cfg.loader.batch,
-        shuffle=False,
-        num_workers=cfg.loader.num_workers,
-        pin_memory=cfg.loader.pin_memory,
-    )
+    train_loader = _loader(cfg, train_dataset, shuffle=True)
+    valid_loader = _loader(cfg, valid_dataset, shuffle=False)
+    calib_loader = _loader(cfg, calib_set, shuffle=False)
     return train_loader, valid_loader, calib_loader, pack(groups)

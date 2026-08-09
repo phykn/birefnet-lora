@@ -1,12 +1,6 @@
-import numpy as np
-from PIL import Image
+"""Compatibility exports for data image I/O."""
 
+from ..data.image import read_image as read_image
+from ..data.image import read_mask as read_mask
 
-def read_image(path: str) -> np.ndarray:
-    with Image.open(path) as image:
-        return np.asarray(image.convert("RGB"), dtype=np.uint8)
-
-
-def read_mask(path: str) -> np.ndarray:
-    with Image.open(path) as image:
-        return np.asarray(image.convert("L"), dtype=np.uint8)
+__all__ = ["read_image", "read_mask"]

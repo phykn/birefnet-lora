@@ -1,9 +1,9 @@
 import numpy as np
 from PIL import Image
 
-from src.prepare.augment import crop
-from src.prepare.load import MaskDataset
-from src.prepare.read import read_image
+from src.data.augment import crop
+from src.data.dataset import MaskDataset
+from src.data.image import read_image
 
 
 def _write_pair(tmp_path):

@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 from src.adapt.fuse import fuse
 from src.build.model import build as build_model
 from src.build.model import load as load_model_overlay
+from src.prepare.spec import PreprocessSpec
 from src.serve.route import router
 
 
@@ -30,20 +31,26 @@ def load_model(path: str, device: torch.device):
 
 
 def read_threshold(model: Any) -> float | None:
-    meta = model.loaded_meta or {}
+    meta = getattr(model, "loaded_meta", None) or {}
     value = meta.get("selection", {}).get("threshold")
     return None if value is None else float(value)
+
+
+def read_preprocess(model: Any) -> PreprocessSpec:
+    return PreprocessSpec.from_meta(getattr(model, "loaded_meta", None))
 
 
 def build_app(
     model: Any,
     device: torch.device,
     threshold: float | None,
+    preprocess: PreprocessSpec | None = None,
 ) -> FastAPI:
     app = FastAPI(title="BiRefNet-LoRA API")
     app.state.model = model
     app.state.device = device
     app.state.threshold = threshold
+    app.state.preprocess = preprocess or PreprocessSpec()
     app.state.predict_sem = asyncio.Semaphore(1)
     app.include_router(router)
     return app
@@ -57,6 +64,7 @@ def main() -> None:
         model=model,
         device=device,
         threshold=read_threshold(model),
+        preprocess=read_preprocess(model),
     )
     uvicorn.run(app, host=args.host, port=args.port)
 

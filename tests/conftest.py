@@ -18,11 +18,13 @@ def api_client():
         model,
         device: torch.device,
         threshold: float | None = None,
+        preprocess=None,
     ) -> TestClient:
         app = build_app(
             model=model,
             device=device,
             threshold=threshold,
+            preprocess=preprocess,
         )
         return TestClient(app)
 

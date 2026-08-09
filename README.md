@@ -8,6 +8,20 @@ Fine-tune BiRefNet with LoRA while keeping the original BiRefNet checkpoint comp
 - Logit-level cosine blending
 - LoRA fusion at API startup
 
+## Structure
+
+- `src/data`: dataset discovery, split persistence, image I/O, and augmentation
+- `src/prepare`: shared in-memory pixel conversion and fit/restore geometry
+- `src/model`: base network and the normalized model-output contract
+- `src/adapt`: LoRA layers, injection, overlays, and fusion
+- `src/predict`: inference orchestration and tiling
+- `src/train`: losses, training objective, metrics, validation, checkpoints, and the trainer
+- `src/build`: model, data-loader, and trainer assembly only
+- `src/serve`: HTTP schemas, codecs, and routes
+
+Older internal import paths such as `src.train.run` and `src.prepare.load`
+remain as compatibility exports; new code should use the owner modules above.
+
 ## Setup
 
 ```bash
@@ -25,7 +39,14 @@ python run_train.py
 python run_train.py --resume run/<run-id>/weights/last.train.pth
 ```
 
-Runs are saved under `run/<run-id>`. Use `notebooks/01_predict.ipynb` to compare the base and LoRA model paths.
+Runs are saved under a collision-safe `run/<run-id>` directory. The final
+training step is always evaluated, so a run can produce best checkpoints even
+when `steps` is not divisible by `val_freq`. The default loader uses two
+persistent workers and pinned memory; use `num_workers: 0`,
+`persistent_workers: false`, and `pin_memory: false` for a low-memory or
+CPU-only setup.
+
+Use `notebooks/01_predict.ipynb` to compare the base and LoRA model paths.
 
 ## Serve
 
@@ -33,7 +54,10 @@ Runs are saved under `run/<run-id>`. Use `notebooks/01_predict.ipynb` to compare
 python run_api.py --host 0.0.0.0 --port 8000 --weight run/<run-id>/weights/best_boundary.overlay.pth
 ```
 
-`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`; positive integers in `tiles` select N×N grids, and `overlap` sets their overlap ratio. Binary output with any grid other than 1 requires an explicit `threshold`. Requests are processed one at a time.
+`POST /predict` accepts base64-encoded image bytes and returns a PNG mask. Output mode can be `binary` or `probability`; positive integers in `tiles` select N×N grids, and `overlap` sets their overlap ratio. Binary output with any grid other than 1 requires an explicit `threshold`. Requests are processed one at a time. New overlays store the training
+preprocess `size` and `mode`, and both deployment validation and the API use
+that same contract. Legacy overlays without this metadata retain the previous
+`1024`/`rgb` behavior.
 
 ## Test
 

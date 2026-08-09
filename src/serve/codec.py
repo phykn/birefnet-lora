@@ -16,6 +16,8 @@ class ImageLimitError(ValueError):
 
 
 def decode(text: str) -> np.ndarray:
+    if len(text) > MAX_BASE64_LENGTH:
+        raise ImageLimitError("image file is too large")
     try:
         raw = base64.b64decode(text, validate=True)
     except (ValueError, binascii.Error) as exc:

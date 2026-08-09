@@ -5,6 +5,9 @@ import numpy as np
 import pytest
 import torch
 
+from src.prepare.spec import PreprocessSpec
+from src.serve.codec import ImageLimitError, decode
+
 PREDICT_TARGET = "src.serve.route.predict_mask"
 
 
@@ -47,6 +50,8 @@ def test_defaults_to_binary_and_uses_saved_threshold(monkeypatch, api_client):
     assert captured["threshold"] == 0.62
     assert captured["tiles"] == (1,)
     assert captured["overlap"] == pytest.approx(1 / 3)
+    assert captured["size"] == 1024
+    assert captured["mode"] == "rgb"
 
 
 def test_request_threshold_overrides_saved_value(monkeypatch, api_client):
@@ -173,3 +178,32 @@ def test_rejects_large_image(monkeypatch, api_client, name, limit):
     )
     assert response.status_code == 413
     assert response.json() == {"detail": "image too large"}
+
+
+def test_uses_checkpoint_preprocess_contract(monkeypatch, api_client):
+    captured = {}
+
+    def fake_predict(model, image, **kwargs):
+        captured.update(kwargs)
+        return np.zeros(image.shape[:2], dtype=np.uint8)
+
+    monkeypatch.setattr(PREDICT_TARGET, fake_predict)
+    client = api_client(
+        object(),
+        torch.device("cpu"),
+        preprocess=PreprocessSpec(size=640, mode="gray_repeat"),
+    )
+    response = client.post(
+        "/predict",
+        json={"base64_str": _encode(np.zeros((4, 4, 3), np.uint8))},
+    )
+
+    assert response.status_code == 200
+    assert captured["size"] == 640
+    assert captured["mode"] == "gray_repeat"
+
+
+def test_decode_rejects_oversized_base64_before_allocating(monkeypatch):
+    monkeypatch.setattr("src.serve.codec.MAX_BASE64_LENGTH", 4)
+    with pytest.raises(ImageLimitError):
+        decode("A" * 8)

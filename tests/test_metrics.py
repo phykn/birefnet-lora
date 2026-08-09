@@ -1,11 +1,12 @@
 import numpy as np
 import torch
 
-from src.train.score import (
+from src.train.metrics import (
     boundary,
     brier,
     dice,
     ece,
+    iou_at_thresholds,
     iou_logits,
 )
 
@@ -41,3 +42,51 @@ def test_probability_calibration_metrics_are_masked():
     valid = torch.tensor([[[[1.0, 1.0, 0.0]]]])
     assert brier(logits, target, valid).item() < 1e-6
     assert ece(logits, target, valid).item() < 1e-6
+
+
+def test_iou_at_thresholds_matches_scalar_sweep_including_equal_values():
+    probability = np.array(
+        [[0.2, 0.3, 0.5], [0.7, 0.9, np.nan]],
+        dtype=np.float32,
+    )
+    target = np.array(
+        [[0, 1, 1], [0, 1, 0]],
+        dtype=bool,
+    )
+    thresholds = [0.3, 0.5, 0.7]
+    expected = []
+    for threshold in thresholds:
+        pred = probability >= threshold
+        intersection = np.logical_and(pred, target).sum()
+        union = np.logical_or(pred, target).sum()
+        expected.append(1.0 if union == 0 else intersection / union)
+
+    np.testing.assert_allclose(
+        iou_at_thresholds(probability, target, thresholds),
+        expected,
+        rtol=0,
+        atol=0,
+    )
+
+
+def test_iou_at_thresholds_accumulates_chunks(monkeypatch):
+    monkeypatch.setattr("src.train.metrics.CALIBRATION_CHUNK_PIXELS", 3)
+    probability = np.array(
+        [0.1, 0.3, 0.5, 0.7, 0.9, np.nan, 0.5],
+        dtype=np.float32,
+    )
+    target = np.array([0, 1, 1, 0, 1, 0, 0], dtype=np.uint8)
+    thresholds = [0.3, 0.5, 0.7]
+    expected = []
+    for threshold in thresholds:
+        pred = probability >= threshold
+        intersection = np.logical_and(pred, target).sum()
+        union = np.logical_or(pred, target).sum()
+        expected.append(1.0 if union == 0 else intersection / union)
+
+    np.testing.assert_allclose(
+        iou_at_thresholds(probability, target, thresholds),
+        expected,
+        rtol=0,
+        atol=0,
+    )

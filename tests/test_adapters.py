@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 
@@ -73,3 +74,10 @@ def test_apply_conv2d_respects_excludes():
     assert isinstance(net.conv, LoRAConv2d)
     assert isinstance(net.offset_conv, nn.Conv2d)
     assert not isinstance(net.offset_conv, LoRAConv2d)
+
+
+def test_lora_layers_reject_invalid_scale_configuration():
+    with pytest.raises(ValueError, match="rank"):
+        LoRALinear(nn.Linear(8, 4), rank=0, alpha=4.0)
+    with pytest.raises(ValueError, match="alpha"):
+        LoRAConv2d(nn.Conv2d(3, 4, 3), rank=2, alpha=float("inf"))

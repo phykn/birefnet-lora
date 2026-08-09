@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+import src.model.swin as swin_model
+
 from src.adapt.inject import inject_linear
 from src.adapt.layer import LoRAConv2d, LoRALinear
 from src.adapt.wrap import LoRABiRefNet
@@ -182,7 +184,7 @@ def test_overlay_rejects_invalid_format(tmp_path):
 
 
 def test_lora_birefnet_forward_returns_output_in_both_modes():
-    from src.adapt.wrap import Output
+    from src.model.output import Output
 
     class _Stub(nn.Module):
         def __init__(self):
@@ -212,3 +214,49 @@ def test_lora_birefnet_forward_returns_output_in_both_modes():
     out_eval = lora(torch.randn(1, 3, 8, 8))
     assert isinstance(out_eval, Output)
     assert out_eval.gdt is None
+
+
+def test_checkpointed_basic_layer_skips_checkpoint_without_grad(monkeypatch):
+    layer = BasicLayer(
+        dim=12,
+        depth=1,
+        num_heads=2,
+        window_size=4,
+        mlp_ratio=2.0,
+        drop_path=0.0,
+        downsample=None,
+        use_checkpoint=True,
+    ).eval()
+
+    def fail(*args, **kwargs):
+        raise AssertionError("inference must not use gradient checkpointing")
+
+    monkeypatch.setattr("src.model.swin.checkpoint.checkpoint", fail)
+    with torch.inference_mode():
+        output, *_ = layer(torch.randn(1, 64, 12), 8, 8)
+
+    assert output.shape == (1, 64, 12)
+
+
+def test_checkpointed_basic_layer_keeps_checkpoint_with_grad(monkeypatch):
+    layer = BasicLayer(
+        dim=12,
+        depth=1,
+        num_heads=2,
+        window_size=4,
+        mlp_ratio=2.0,
+        drop_path=0.0,
+        downsample=None,
+        use_checkpoint=True,
+    ).eval()
+    original = swin_model.checkpoint.checkpoint
+    calls = []
+
+    def tracked(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(swin_model.checkpoint, "checkpoint", tracked)
+    layer(torch.randn(1, 64, 12), 8, 8)
+
+    assert calls == [1]

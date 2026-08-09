@@ -3,9 +3,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.adapt.wrap import Output
-from src.predict.run import predict, predict_logits
-from src.predict.tile import Tile, plan, weigh
+from src.model.output import Output
+from src.predict.inference import predict, predict_logits
+from src.predict.tiling import Tile, plan, weigh
 
 
 class _ConstantModel(nn.Module):
@@ -102,7 +102,7 @@ def test_one_by_one_skips_tile_planner(monkeypatch):
     def fail(*args, **kwargs):
         raise AssertionError("tile planner should not run")
 
-    monkeypatch.setattr("src.predict.run.plan", fail)
+    monkeypatch.setattr("src.predict.inference.plan", fail)
     model = _ConstantModel(logit=1.25).eval()
     image = np.zeros((45, 61, 3), dtype=np.uint8)
     logits = predict_logits(model, image, size=32)
@@ -146,7 +146,7 @@ def test_multiple_grids_are_streamed_and_averaged_at_logit_level(monkeypatch):
         raise AssertionError("grid outputs must not be collected for np.mean")
 
     with monkeypatch.context() as patch:
-        patch.setattr("src.predict.run.np.mean", fail)
+        patch.setattr("src.predict.inference.np.mean", fail)
         combined = predict_logits(model, image, size=32, tiles=[1, 2])
 
     np.testing.assert_allclose(combined, (single + tiled) / 2, atol=1e-6)

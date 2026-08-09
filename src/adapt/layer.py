@@ -4,11 +4,19 @@ import torch
 import torch.nn as nn
 
 
+def _scale(rank: int, alpha: float) -> float:
+    if isinstance(rank, bool) or rank <= 0:
+        raise ValueError("LoRA rank must be a positive integer")
+    if not math.isfinite(alpha) or alpha <= 0:
+        raise ValueError("LoRA alpha must be positive and finite")
+    return float(alpha) / rank
+
+
 class LoRALinear(nn.Module):
     def __init__(self, linear: nn.Linear, rank: int = 8, alpha: float = 16.0) -> None:
         super().__init__()
         self.linear = linear
-        self.scale = alpha / rank
+        self.scale = _scale(rank, alpha)
 
         for param in self.linear.parameters():
             param.requires_grad = False
@@ -35,7 +43,7 @@ class LoRAConv2d(nn.Module):
     def __init__(self, conv: nn.Conv2d, rank: int = 8, alpha: float = 16.0) -> None:
         super().__init__()
         self.conv = conv
-        self.scale = alpha / rank
+        self.scale = _scale(rank, alpha)
 
         for param in self.conv.parameters():
             param.requires_grad = False

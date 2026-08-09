@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from src.prepare.augment import flip
+from src.data.augment import flip
 
 
 def _pair():

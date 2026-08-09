@@ -5,6 +5,7 @@ import torch.nn as nn
 from src.adapt.fuse import fuse
 from src.adapt.layer import LoRAConv2d, LoRALinear
 from src.adapt.wrap import LoRABiRefNet
+from src.prepare.spec import PreprocessSpec
 
 
 class _Backbone(nn.Module):
@@ -35,17 +36,18 @@ class _Model(nn.Module):
 
 def _build() -> LoRABiRefNet:
     model = LoRABiRefNet(_Model(), rank=2, alpha=4.0)
+    generator = torch.Generator().manual_seed(0)
     with torch.no_grad():
         for module in model.modules():
             if isinstance(module, (LoRALinear, LoRAConv2d)):
-                module.up.weight.normal_()
-                module.down.weight.normal_()
+                module.up.weight.normal_(std=0.1, generator=generator)
+                module.down.weight.normal_(std=0.1, generator=generator)
     return model
 
 
 def test_fuse_preserves_logits_and_removes_adapters():
     model = _build().eval()
-    x = torch.randn(2, 3, 8, 8)
+    x = torch.randn(2, 3, 8, 8, generator=torch.Generator().manual_seed(1))
     expected = model(x).logits[-1]
 
     actual = fuse(model)(x).logits[-1]
@@ -79,7 +81,10 @@ def test_api_loader_fuses_model_and_keeps_overlay_meta(monkeypatch):
 
     def load_overlay(cfg, base, path):
         model = LoRABiRefNet(base, rank=2, alpha=4.0)
-        model.loaded_meta = {"selection": {"threshold": 0.42}}
+        model.loaded_meta = {
+            "selection": {"threshold": 0.42},
+            "preprocess": {"size": 640, "mode": "gray_features"},
+        }
         return model
 
     monkeypatch.setattr(run_api, "build_model", lambda cfg: _Model())
@@ -92,3 +97,24 @@ def test_api_loader_fuses_model_and_keeps_overlay_meta(monkeypatch):
         isinstance(module, (LoRALinear, LoRAConv2d)) for module in model.modules()
     )
     assert run_api.read_threshold(model) == 0.42
+    assert run_api.read_preprocess(model) == PreprocessSpec(
+        size=640,
+        mode="gray_features",
+    )
+
+
+def test_fuse_does_not_keep_removed_adapter_parameters_alive():
+    model = _build().eval()
+    adapters = [
+        parameter
+        for module in model.modules()
+        if isinstance(module, (LoRALinear, LoRAConv2d))
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    ]
+
+    fuse(model)
+
+    live = {id(parameter) for parameter in model.parameters()}
+    assert all(id(parameter) not in live for parameter in adapters)
+    assert model.list_trainable() == []

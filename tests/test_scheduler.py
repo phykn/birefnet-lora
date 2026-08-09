@@ -1,6 +1,7 @@
+import pytest
 import torch
 
-from src.train.schedule import CosineSchedule
+from src.train.scheduler import CosineSchedule
 
 
 def _make(max_lr=1.0, min_lr=0.0, warmup=5, total=20):
@@ -68,3 +69,12 @@ def test_parameter_groups_keep_their_lr_scale():
         lrs = [group["lr"] for group in opt.param_groups]
         assert abs(lrs[1] - 0.5 * lrs[0]) < 1e-9
         sched.step()
+
+
+@pytest.mark.parametrize(
+    ("warmup", "total"),
+    [(-1, 20), (20, 20), (0, 0)],
+)
+def test_rejects_invalid_cycle_lengths(warmup, total):
+    with pytest.raises(ValueError):
+        _make(warmup=warmup, total=total)

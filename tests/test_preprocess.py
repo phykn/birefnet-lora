@@ -1,7 +1,8 @@
 import numpy as np
 
 from src.prepare.convert import MEAN, STD, convert, normalize
-from src.prepare.fit import fit_image, fit_mask, plan, restore
+from src.prepare.fit import fit_image, fit_mask, fit_tensor, plan, restore
+from src.prepare.spec import PreprocessSpec
 
 
 def test_normalize_known_rgb_pixel():
@@ -49,3 +50,21 @@ def test_restore_logit_returns_original_shape_and_removes_padding():
     restored = restore(canvas, fit)
     assert restored.shape == (17, 43)
     np.testing.assert_allclose(restored, 3.0)
+
+
+def test_fit_tensor_matches_fit_image_without_allocating_valid_contract():
+    image = np.arange(15 * 30 * 3, dtype=np.uint8).reshape(15, 30, 3)
+    expected, _, expected_fit = fit_image(image, size=32)
+    actual, actual_fit = fit_tensor(image, size=32)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert actual_fit == expected_fit
+
+
+def test_preprocess_spec_round_trip_and_legacy_default():
+    spec = PreprocessSpec(size=640, mode="gray_features")
+    assert PreprocessSpec.from_meta({"preprocess": spec.to_meta()}) == spec
+    assert PreprocessSpec.from_meta({}) == PreprocessSpec()
+
+    with np.testing.assert_raises(RuntimeError):
+        PreprocessSpec.from_meta({"preprocess": {"size": 640.5, "mode": "rgb"}})

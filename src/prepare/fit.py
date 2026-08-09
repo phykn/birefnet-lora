@@ -48,25 +48,42 @@ def _resize(
     )
 
 
-def fit_image(
+def fit_tensor(
     image: np.ndarray,
     size: int = 1024,
     mode: InputMode = "rgb",
     fit: Fit | None = None,
-) -> tuple[np.ndarray, np.ndarray, Fit]:
+) -> tuple[np.ndarray, Fit]:
     fit = fit or plan(*image.shape[:2], size=size)
+    if (fit.src_h, fit.src_w) != image.shape[:2]:
+        raise ValueError(
+            "Fit source shape does not match image: "
+            f"fit={(fit.src_h, fit.src_w)}, image={image.shape[:2]}"
+        )
     x = convert(image, mode=mode)
     down = fit.dst_h < image.shape[0] or fit.dst_w < image.shape[1]
     interp = cv2.INTER_AREA if down else cv2.INTER_CUBIC
     x = normalize(_resize(x, fit, interp))
 
     canvas = np.zeros((fit.size, fit.size, 3), dtype=np.float32)
-    valid = np.zeros((1, fit.size, fit.size), dtype=np.float32)
     y0, x0 = fit.top, fit.left
     y1, x1 = y0 + fit.dst_h, x0 + fit.dst_w
     canvas[y0:y1, x0:x1] = x
+    return np.transpose(canvas, (2, 0, 1)), fit
+
+
+def fit_image(
+    image: np.ndarray,
+    size: int = 1024,
+    mode: InputMode = "rgb",
+    fit: Fit | None = None,
+) -> tuple[np.ndarray, np.ndarray, Fit]:
+    tensor, fit = fit_tensor(image, size=size, mode=mode, fit=fit)
+    valid = np.zeros((1, fit.size, fit.size), dtype=np.float32)
+    y0, x0 = fit.top, fit.left
+    y1, x1 = y0 + fit.dst_h, x0 + fit.dst_w
     valid[:, y0:y1, x0:x1] = 1.0
-    return np.transpose(canvas, (2, 0, 1)), valid, fit
+    return tensor, valid, fit
 
 
 def fit_mask(mask: np.ndarray, fit: Fit) -> np.ndarray:

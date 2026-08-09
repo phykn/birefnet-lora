@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.func import functional_call
 
-from ..adapt.wrap import Output
+from ..model.output import Output
 
 
 class Teacher:
@@ -22,10 +22,15 @@ class Teacher:
         self.decay = float(decay)
         self.start = int(start)
         self.ramp = int(ramp)
-        self.params = {
-            name: param.detach().float().clone()
+        self._source_model = model
+        self._current_params = {
+            name: param
             for name, param in model.named_parameters()
             if param.requires_grad
+        }
+        self.params = {
+            name: param.detach().float().clone()
+            for name, param in self._current_params.items()
         }
         if not self.params:
             raise RuntimeError("Teacher requires trainable model parameters")
@@ -35,7 +40,11 @@ class Teacher:
 
     @torch.no_grad()
     def update(self, model: nn.Module) -> None:
-        current = dict(model.named_parameters())
+        current = (
+            self._current_params
+            if model is self._source_model
+            else dict(model.named_parameters())
+        )
         for name, avg in self.params.items():
             param = current[name].detach().to(device=avg.device, dtype=avg.dtype)
             avg.lerp_(param, 1.0 - self.decay)
@@ -44,7 +53,8 @@ class Teacher:
     def predict(self, model: nn.Module, image: torch.Tensor) -> torch.Tensor:
         training = model.training
         try:
-            model.eval()
+            if training:
+                model.eval()
             out: Output = functional_call(
                 model,
                 self.params,
@@ -53,7 +63,8 @@ class Teacher:
             )
             return out.logits[-1].detach()
         finally:
-            model.train(training)
+            if training:
+                model.train()
 
     def state_dict(self) -> dict[str, torch.Tensor]:
         return {name: value.detach().cpu() for name, value in self.params.items()}

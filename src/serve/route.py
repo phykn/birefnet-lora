@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from ..predict.run import predict as predict_mask
+from ..predict.inference import predict as predict_mask
 
 from .codec import ImageLimitError, decode, encode
 from .schema import HealthResponse, PredictRequest, PredictResponse
@@ -42,6 +42,8 @@ async def predict(request: Request, body: PredictRequest) -> PredictResponse:
             image,
             output_mode=body.output_mode,
             threshold=threshold,
+            size=request.app.state.preprocess.size,
+            mode=request.app.state.preprocess.mode,
             tiles=body.tiles,
             overlap=body.overlap,
         )

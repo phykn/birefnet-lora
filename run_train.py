@@ -7,9 +7,9 @@ from omegaconf import DictConfig, OmegaConf
 from src.build.data import build as build_data
 from src.build.model import adapt
 from src.build.model import build as build_model
-from src.build.split import Splits
-from src.build.split import load as load_splits
-from src.build.split import save as save_splits
+from src.data.split import Splits
+from src.data.split import load as load_splits
+from src.data.split import save as save_splits
 from src.build.trainer import build as build_trainer
 
 

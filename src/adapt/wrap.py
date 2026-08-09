@@ -1,17 +1,12 @@
-from dataclasses import dataclass
 from typing import Any
 
 import torch
 import torch.nn as nn
 
+from ..model.output import Output as Output
 from .inject import inject_conv, inject_linear
 from .overlay import OverlayMixin
 
-
-@dataclass
-class Output:
-    logits: list[torch.Tensor]
-    gdt: tuple[list[torch.Tensor], list[torch.Tensor]] | None = None
 
 
 def _resolve_module(root: nn.Module, path: str) -> nn.Module:

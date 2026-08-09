@@ -10,8 +10,11 @@ STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
 
 
 def normalize(image: np.ndarray) -> np.ndarray:
-    x = image.astype(np.float32) / 255.0
-    return (x - MEAN) / STD
+    x = image.astype(np.float32)
+    x /= 255.0
+    x -= MEAN
+    x /= STD
+    return x
 
 
 def _to_rgb(image: np.ndarray) -> np.ndarray:

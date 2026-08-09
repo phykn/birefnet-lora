@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 
-from src.train.loss import (
+from src.train.losses import (
     BoundaryBCELoss,
     DiceLoss,
     GCELoss,
     IoULoss,
     SegmentationLoss,
-    TrainLoss,
 )
+from src.train.objective import TrainLoss
 
 
 def test_iou_loss_zero_for_perfect_overlap():
@@ -110,7 +110,7 @@ class _TrainModel(nn.Module):
         self.conv = nn.Conv2d(3, 1, 1)
 
     def forward(self, x):
-        from src.adapt.wrap import Output
+        from src.model.output import Output
 
         pred = self.conv(x)
         if self.training:

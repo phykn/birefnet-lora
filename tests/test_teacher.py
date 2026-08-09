@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.adapt.wrap import Output
+from src.model.output import Output
 from src.train.teacher import Teacher
 
 

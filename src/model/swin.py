@@ -338,7 +338,7 @@ class BasicLayer(nn.Module):
         )
 
         for blk in self.blocks:
-            if self.use_checkpoint:
+            if self.use_checkpoint and torch.is_grad_enabled():
                 x = checkpoint.checkpoint(
                     blk, x, attn_mask, height, width, use_reentrant=False
                 )

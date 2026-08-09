@@ -4,7 +4,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import run_train
-from src.build.split import save as save_splits
+from src.data.split import save as save_splits
 
 
 def _make_run(tmp_path):
