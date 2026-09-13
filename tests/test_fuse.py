@@ -77,7 +77,8 @@ def test_fuse_rejects_repeat_call():
 
 
 def test_api_loader_fuses_model_and_keeps_overlay_meta(monkeypatch):
-    import run_api
+    import src.build.model as builder
+    from src.serve.app import read_preprocess, read_threshold
 
     def load_overlay(cfg, base, path):
         model = LoRABiRefNet(base, rank=2, alpha=4.0)
@@ -87,17 +88,17 @@ def test_api_loader_fuses_model_and_keeps_overlay_meta(monkeypatch):
         }
         return model
 
-    monkeypatch.setattr(run_api, "build_model", lambda cfg: _Model())
-    monkeypatch.setattr(run_api, "load_model_overlay", load_overlay)
+    monkeypatch.setattr(builder, "build", lambda cfg: _Model())
+    monkeypatch.setattr(builder, "load", load_overlay)
 
-    model = run_api.load_model("overlay.pth", torch.device("cpu"))
+    model = builder.build_predictor(None, "overlay.pth", torch.device("cpu"))
 
     assert model.training is False
     assert not any(
         isinstance(module, (LoRALinear, LoRAConv2d)) for module in model.modules()
     )
-    assert run_api.read_threshold(model) == 0.42
-    assert run_api.read_preprocess(model) == PreprocessSpec(
+    assert read_threshold(model) == 0.42
+    assert read_preprocess(model) == PreprocessSpec(
         size=640,
         mode="gray_features",
     )

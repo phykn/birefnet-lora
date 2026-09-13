@@ -1,5 +1,7 @@
 import os
+from collections.abc import Callable
 
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -8,9 +10,9 @@ from tqdm import tqdm
 
 from ..prepare.spec import PreprocessSpec
 from .checkpoint import CheckpointStore
-from .scheduler import CosineSchedule
+from .schedule import CosineSchedule
 from .teacher import Teacher
-from .validation import Validator
+from .validate import Validator
 
 
 class Trainer:
@@ -25,13 +27,18 @@ class Trainer:
         scheduler: CosineSchedule,
         teacher: Teacher,
         save_dir: str,
+        predictor: Callable[..., np.ndarray],
         max_grad_norm: float = 1.0,
         accum_steps: int = 1,
         preprocess: PreprocessSpec | None = None,
     ) -> None:
         if max_grad_norm <= 0:
             raise ValueError("max_grad_norm must be positive")
-        if isinstance(accum_steps, bool) or accum_steps < 1:
+        if (
+            not isinstance(accum_steps, int)
+            or isinstance(accum_steps, bool)
+            or accum_steps < 1
+        ):
             raise ValueError("accum_steps must be a positive integer")
 
         self.model = model
@@ -46,6 +53,7 @@ class Trainer:
         self.max_grad_norm = float(max_grad_norm)
         self.accum_steps = int(accum_steps)
         self.preprocess = preprocess or PreprocessSpec()
+        self.predictor = predictor
         self.trainable_params = tuple(model.list_trainable())
         if not self.trainable_params:
             raise RuntimeError("Trainer requires trainable model parameters")
@@ -84,6 +92,7 @@ class Trainer:
             amp_dtype=self.amp_dtype,
             use_amp=self.use_amp,
             preprocess=self.preprocess,
+            predictor=self.predictor,
         )
 
     def validate(self) -> dict[str, float]:

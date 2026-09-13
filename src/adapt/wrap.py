@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from ..model.output import Output as Output
 from .inject import inject_conv, inject_linear
+from .layer import _scale
 from .overlay import OverlayMixin
 
 
@@ -29,6 +30,7 @@ class LoRABiRefNet(OverlayMixin, nn.Module):
         trainable_heads: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         super().__init__()
+        _scale(rank, alpha)
         self.model = model
         self.rank = int(rank)
         self.alpha = float(alpha)
@@ -70,10 +72,7 @@ class LoRABiRefNet(OverlayMixin, nn.Module):
             for param in module.parameters():
                 param.requires_grad = True
 
-        for module in self.model.modules():
-            if isinstance(module, nn.modules.batchnorm._BatchNorm):
-                module.eval()
-
+        self.train(self.model.training)
         self._refresh_stats()
 
     def _refresh_stats(self) -> None:

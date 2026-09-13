@@ -2,6 +2,7 @@ from typing import Any
 
 import torch
 
+from ..adapt.fuse import fuse
 from ..adapt.wrap import LoRABiRefNet
 from ..model import BiRefNet
 
@@ -40,13 +41,14 @@ def load(
     model: torch.nn.Module,
     path: str,
 ) -> LoRABiRefNet:
-    device = next(model.parameters()).device
-    wrapped = LoRABiRefNet(
-        model=model,
-        rank=cfg.lora.rank,
-        alpha=cfg.lora.alpha,
-        trainable_heads=list(cfg.lora.get("trainable_heads", [])),
-    )
+    wrapped = adapt(cfg, model)
     wrapped.load_overlay(path)
     print(f"[LOAD] {path}")
-    return wrapped.to(device)
+    return wrapped
+
+
+def build_predictor(cfg: Any, path: str, device: torch.device) -> LoRABiRefNet:
+    base = build(cfg).to(device)
+    model = load(cfg, base, path)
+    model.eval()
+    return fuse(model)

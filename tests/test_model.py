@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import pytest
 
 import src.model.swin as swin_model
 
@@ -83,9 +84,19 @@ def test_zero_initialized_lora_preserves_base_eval_output():
     base = _EvalStub().eval()
     x = torch.randn(1, 3, 8, 8)
     expected = base(x)[0].detach().clone()
-    wrapped = LoRABiRefNet(base, rank=2, alpha=4.0).eval()
+    wrapped = LoRABiRefNet(base, rank=2, alpha=4.0)
+    assert wrapped.training is False
     actual = wrapped(x).logits[0]
     assert torch.allclose(actual, expected)
+
+
+@pytest.mark.parametrize("rank", [True, 1.5, 0])
+def test_wrapper_rejects_invalid_rank_before_freezing_base(rank):
+    base = _FakeBiRefNet()
+    with pytest.raises(ValueError, match="rank"):
+        LoRABiRefNet(base, rank=rank)
+    assert all(param.requires_grad for param in base.parameters())
+    assert isinstance(base.bb.fc1, nn.Linear)
 
 
 def test_lora_birefnet_keeps_batchnorm_in_eval_when_training():

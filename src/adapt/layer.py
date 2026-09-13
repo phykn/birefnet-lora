@@ -5,7 +5,7 @@ import torch.nn as nn
 
 
 def _scale(rank: int, alpha: float) -> float:
-    if isinstance(rank, bool) or rank <= 0:
+    if not isinstance(rank, int) or isinstance(rank, bool) or rank <= 0:
         raise ValueError("LoRA rank must be a positive integer")
     if not math.isfinite(alpha) or alpha <= 0:
         raise ValueError("LoRA alpha must be positive and finite")
@@ -25,11 +25,15 @@ class LoRALinear(nn.Module):
             in_features=linear.in_features,
             out_features=rank,
             bias=False,
+            device=linear.weight.device,
+            dtype=linear.weight.dtype,
         )
         self.up = nn.Linear(
             in_features=rank,
             out_features=linear.out_features,
             bias=False,
+            device=linear.weight.device,
+            dtype=linear.weight.dtype,
         )
 
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
@@ -60,6 +64,8 @@ class LoRAConv2d(nn.Module):
             dilation=conv.dilation,
             groups=1,
             bias=False,
+            device=conv.weight.device,
+            dtype=conv.weight.dtype,
         )
         self.up = nn.Conv2d(
             in_channels=rank,
@@ -70,6 +76,8 @@ class LoRAConv2d(nn.Module):
             dilation=1,
             groups=1,
             bias=False,
+            device=conv.weight.device,
+            dtype=conv.weight.dtype,
         )
 
         nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))

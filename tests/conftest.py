@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture
 def api_client():
-    from run_api import build_app
+    from src.serve.app import build_app
 
     def _build(
         model,

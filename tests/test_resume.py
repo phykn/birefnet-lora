@@ -4,6 +4,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import run_train
+from src.config import load_run
 from src.data.split import save as save_splits
 
 
@@ -27,17 +28,14 @@ def _make_run(tmp_path):
     return run_dir, checkpoint, splits
 
 
-def test_load_run_uses_saved_config_and_splits(tmp_path):
-    run_dir, checkpoint, expected_splits = _make_run(tmp_path)
+def test_load_run_uses_saved_config(tmp_path):
+    run_dir, checkpoint, _ = _make_run(tmp_path)
 
-    cfg, actual_checkpoint, actual_run_dir, splits = run_train.load_run(
-        str(checkpoint)
-    )
+    cfg, actual_checkpoint, actual_run_dir = load_run(str(checkpoint))
 
     assert cfg.marker == "saved"
     assert actual_checkpoint == checkpoint.resolve()
     assert actual_run_dir == run_dir.resolve()
-    assert splits == expected_splits
 
 
 def test_load_run_requires_saved_config(tmp_path):
@@ -45,7 +43,7 @@ def test_load_run_requires_saved_config(tmp_path):
     (run_dir / "config.yaml").unlink()
 
     with pytest.raises(FileNotFoundError, match="Run config not found"):
-        run_train.load_run(str(checkpoint))
+        load_run(str(checkpoint))
 
 
 def test_main_resumes_in_existing_run(monkeypatch, tmp_path):
@@ -78,7 +76,7 @@ def test_main_resumes_in_existing_run(monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_train,
         "parse_args",
-        lambda: Namespace(resume=str(checkpoint)),
+        lambda: Namespace(resume=str(checkpoint), config=None),
     )
     monkeypatch.setattr(run_train, "build_model", lambda actual: Base())
     monkeypatch.setattr(run_train, "adapt", lambda actual, base: Model())

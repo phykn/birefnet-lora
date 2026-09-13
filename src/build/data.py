@@ -5,7 +5,6 @@ from typing import Any
 from torch.utils.data import DataLoader
 
 from ..data.dataset import MaskDataset
-from ..data.pairs import index as index
 from ..data.pairs import pair_files
 from ..data.split import Splits, make, pack, restore
 

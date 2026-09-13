@@ -9,8 +9,9 @@ from torch.utils.data import DataLoader, Dataset
 
 from src.model.output import Output
 from src.prepare.spec import PreprocessSpec
+from src.predict.inference import predict_logits
 from src.train.trainer import Trainer
-from src.train.scheduler import CosineSchedule
+from src.train.schedule import CosineSchedule
 from src.train.teacher import Teacher
 
 
@@ -102,6 +103,7 @@ def _make_trainer(tmp_path, accum_steps=1, preprocess=None):
         scheduler=scheduler,
         teacher=teacher,
         save_dir=str(tmp_path),
+        predictor=predict_logits,
         max_grad_norm=1.0,
         accum_steps=accum_steps,
         preprocess=preprocess,
@@ -346,9 +348,10 @@ def test_training_rejects_non_positive_frequencies(tmp_path, name, value):
         trainer.train(**kwargs)
 
 
-def test_trainer_rejects_zero_accumulation(tmp_path):
+@pytest.mark.parametrize("accum_steps", [0, -1, True, 1.5])
+def test_trainer_rejects_invalid_accumulation(tmp_path, accum_steps):
     with pytest.raises(ValueError, match="accum_steps"):
-        _make_trainer(tmp_path, accum_steps=0)
+        _make_trainer(tmp_path, accum_steps=accum_steps)
 
 
 def test_native_prediction_uses_saved_preprocess(monkeypatch, tmp_path):
@@ -368,7 +371,7 @@ def test_native_prediction_uses_saved_preprocess(monkeypatch, tmp_path):
         captured.update(kwargs)
         return np.zeros(image.shape[:2], dtype=np.float32)
 
-    monkeypatch.setattr("src.train.validation.predict_logits", fake_predict)
+    trainer.predictor = fake_predict
     list(trainer.predict_native(trainer.valid_loader))
 
     assert captured == {"size": 64, "mode": "gray_features"}

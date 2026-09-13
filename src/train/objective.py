@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..model.output import Output
-from .losses import SegmentationLoss, erode_valid, masked_mean
+from .loss import SegmentationLoss, erode_valid, masked_mean
 
 
 class TrainLoss(nn.Module):

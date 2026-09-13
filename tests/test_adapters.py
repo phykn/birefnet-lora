@@ -81,3 +81,18 @@ def test_lora_layers_reject_invalid_scale_configuration():
         LoRALinear(nn.Linear(8, 4), rank=0, alpha=4.0)
     with pytest.raises(ValueError, match="alpha"):
         LoRAConv2d(nn.Conv2d(3, 4, 3), rank=2, alpha=float("inf"))
+
+
+@pytest.mark.parametrize("kind", ["linear", "conv"])
+def test_adapter_preserves_base_dtype_and_output(kind):
+    if kind == "linear":
+        base = nn.Linear(3, 4, dtype=torch.float64)
+        x = torch.randn(2, 3, dtype=torch.float64)
+        layer = LoRALinear(base, rank=2)
+    else:
+        base = nn.Conv2d(3, 4, 3, padding=1, dtype=torch.float64)
+        x = torch.randn(2, 3, 8, 8, dtype=torch.float64)
+        layer = LoRAConv2d(base, rank=2)
+    torch.testing.assert_close(layer(x), base(x))
+    layer(x).sum().backward()
+    assert layer.up.weight.grad is not None

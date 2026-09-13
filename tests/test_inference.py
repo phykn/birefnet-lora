@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from src.model.output import Output
 from src.predict.inference import predict, predict_logits
-from src.predict.tiling import Tile, plan, weigh
+from src.predict.tile import Tile, plan, weigh
 
 
 class _ConstantModel(nn.Module):

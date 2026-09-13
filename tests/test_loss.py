@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.train.losses import (
+from src.train.loss import (
     BoundaryBCELoss,
     DiceLoss,
     GCELoss,

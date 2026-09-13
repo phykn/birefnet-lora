@@ -7,7 +7,7 @@ import torch
 
 from ..prepare.convert import InputMode, convert
 from ..prepare.fit import fit_tensor, restore
-from .tiling import plan, weigh
+from .tile import plan, weigh
 
 OutputMode = Literal["binary", "probability"]
 

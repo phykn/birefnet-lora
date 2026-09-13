@@ -9,8 +9,9 @@ from torch.utils.data import DataLoader
 
 from ..adapt.wrap import LoRABiRefNet
 from ..prepare.spec import PreprocessSpec
+from ..predict.inference import predict_logits
 from ..train.objective import TrainLoss
-from ..train.scheduler import CosineSchedule
+from ..train.schedule import CosineSchedule
 from ..train.teacher import Teacher
 from ..train.trainer import Trainer
 
@@ -111,6 +112,7 @@ def build(
         scheduler=scheduler,
         teacher=teacher,
         save_dir=target,
+        predictor=predict_logits,
         max_grad_norm=cfg.train.max_grad_norm,
         accum_steps=cfg.train.accum_steps,
         preprocess=PreprocessSpec(
